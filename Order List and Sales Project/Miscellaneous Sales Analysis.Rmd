@@ -1,0 +1,90 @@
+---
+title: "Miscellaneous"
+author: "Thomas Sato"
+date: "2023-06-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exploring quantity of products shipped.
+```{r}
+# Imputing missing values in quantity with 1, assuming the unit order is most common
+ordersdates$QTY <- ifelse(is.na(ordersdates$QTY), 1, ordersdates$QTY)
+```
+
+Making a list of dates to fill in the datasets for days that had no orders.
+```{r}
+# Dates from January 2016 to May 2023
+dates16to23 <- as.data.frame(seq(as.Date("2016-01-01"), as.Date("2023-05-31"), by="days"))
+names(dates16to23) <- "Date"
+```
+
+Taking the sum of all orders in the QTY column by date that the product was ordered.
+```{r, warning = FALSE}
+ordersdatesqty <- ordersdates %>%
+  group_by(Ordered) %>%
+  summarize(sum_orders = sum(as.numeric(QTY), na.rm = TRUE))
+
+# Joining the orders to the empty dates column, then filling in the sales with 0 when necessary
+ordersdatesqty <- left_join(dates16to23, ordersdatesqty, by = c("Date" = "Ordered")) %>%
+  mutate(sum_orders = replace_na(sum_orders, 0),
+         Day = day(Date),
+         Month = month(Date),
+         Year = year(Date))
+```
+
+Creating a time series object for the quantity of products ordered, then graphing it.
+```{r}
+qtytime <- ts(ordersdatesqty$sum_orders, start = 2016, frequency = 365)
+
+# autoplot comes from the {forecast} package, along with many of the other plotting functions that make plotting time series data easier.
+autoplot(qtytime) +
+  labs(x = "Date (Day)", y = "Number of Products",
+       title = "Quantity of Products Ordered from 2016-Present") +
+  theme_bw()
+```
+
+What is interesting is that there are certain outlier days in terms of products ordered, for example that day in the middle of 2022 that has 161 orders.
+```{r}
+summary(ordersdatesqty$sum_orders)
+```
+On average, there are 3.058 products being ordered per day from 2016 up until May 2023.
+
+```{r}
+# 161 orders on July 14, 2022
+ordersdatesqty[which(ordersdatesqty$sum_orders == 161), ]
+
+filter(orders, Ordered == "2022-7-14")
+```
+On July 14, 2022, there was an order for 160 105cm glass tubes, which explains the peak, and probably orders like this influence the rest of the graph in the same way as well. To be honest, it is probably more interesting to not look at quantity, but just at the number of orders in general.
+
+USA is our biggest country of origin in terms of customer demographics, with CHina close in second.
+```{r}
+ordersdates %>%
+  group_by(COUNTRY) %>%
+  summarize(n = n()) %>%
+  arrange(desc(n))
+```
+
+# Revenue
+```{r}
+# $26,598,298 since 2016
+sum(as.numeric(ordersdates$NET), na.rm = TRUE)
+```
+
+```{r}
+revenueyears <- ordersdates %>%
+  group_by(Year) %>%
+  summarize(revenue = sum(as.numeric(NET), na.rm = TRUE))
+
+ggplot(revenueyears) +
+  geom_col(aes(Year, revenue))
+  
+```
+
+
+
+

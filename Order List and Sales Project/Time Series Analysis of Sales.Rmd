@@ -1,0 +1,824 @@
+---
+title: "Time Series Analysis of Sales"
+author: "Thomas Sato"
+date: "30 May 2023 - 17 August 2023"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Import packages
+```{r, message = FALSE}
+library(tidyverse)
+library(tidytext)
+library(readxl)
+library(lubridate)
+library(fpp2)
+library(zoo)
+library(scales)
+library(ggnewscale)
+```
+
+# Data Cleaning
+The end goal for this section is to have one dataset that has all the rows from the "Out" datasets and one dataset that has all of the rows from the "In" datasets.  Then, join the datasets together by the Sales Order Number (SO#).
+
+
+Names of the spreadsheets in the orderlist workbook.
+```{r, message = FALSE}
+# First 50 spreadsheet names
+head(excel_sheets("Orderlist 2023 081723.xlsm"), n = 50)
+
+# There are 338 spreadsheets in the workbook
+length(excel_sheets("Orderlist 2023 081723.xlsm"))
+
+# These are the names we care about for this analysis (January 2020 - May 2023):
+monthslists <- excel_sheets("Orderlist 2023 081723.xlsm")
+
+# These are the names of the out spreadsheets and in spreadsheets
+outs <- monthslists[grepl("out", tolower(monthslists))]
+ins <- monthslists[grepl("in", tolower(monthslists))]
+```
+
+Binding the rows of the Out datasets
+```{r, message = FALSE}
+# Starting with the first OUT sheet, then binding the rest of them together
+outdatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[1],
+                          skip = 1, col_types = "text")
+
+for(i in seq(1:(length(outs)))) {
+  
+  outdataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[i],
+                           col_types = "text", skip = 1)
+  
+  # Binding the rows of the datasets together
+  outdatasets <- bind_rows(outdatasets, outdataset)
+
+}
+
+# Result:
+outdatasets
+```
+
+Modifying the columns to match each other after row binding.
+```{r}
+outdatasets <- outdatasets %>%
+        mutate(`Accessories/Details` = ifelse(is.na(`Accessories/Details`), `PRODUCTS DESCRIPTION`, `Accessories/Details`),
+               `Accessories/Details` = ifelse(is.na(`Accessories/Details`), PRODUCTS, `Accessories/Details`),
+               `SO#` = ifelse(is.na(`SO#`), `INV / SO #`, `SO#`),
+               `SO#` = ifelse(is.na(`SO#`), `SO #`, `SO#`)) %>%
+        select(`Accessories/Details`, everything())
+```
+
+Binding the rows of the In datasets
+```{r, message = FALSE}
+# Again starting with the most recent dataset, then binding the rest of the rows to it
+indatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = ins[1], col_types = "text")
+colnames(indatasets)[1] = "Source"
+
+for(i in seq(1:(length(ins)-1))) {
+  
+  indataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = ins[i+1],
+                          col_types = "text")
+  
+  # Renaming the first column of the dataset to match what it is in the "Out" datasets, and to be able to bind the rows together for that column
+  colnames(indataset)[1] <- "Source"
+  
+  indatasets <- bind_rows(indatasets, indataset)
+  
+}
+
+# Result:
+indatasets
+```
+
+Cleaning data in the Outs dataset
+```{r}
+# Getting rid of extra columns from row binds and filtering out repairs
+outshipping <- filter(outdatasets[, 1:18], !is.na(Source) | !is.na(`SO#`))
+outshipping <- filter(outshipping, !(Source %in% c("REPAIR", "Repair", "repair")))
+
+# Filtering out repairs 
+outshipping <- filter(outshipping, !startsWith(`SO#`, "RMA"))
+```
+
+Cleaning data in the Ins dataset
+```{r}
+# Getting rid of extra columns and filtering out repairs
+inorders <- filter(indatasets[, 1:11], 
+                   !is.na(Source) | !(Source %in% c("REPAIR", "Repair", "repair")))
+
+# Getting rid of one leftover observation that starts with "RMA"
+inorders <- filter(inorders, !startsWith(SO, "RMA"))
+```
+
+
+Joining the tables together
+```{r}
+(orders <- left_join(outshipping, inorders, by = c(`SO#` = "SO")))
+```
+There is a warning here that there is a many-to-many relationship in the data, which means that sometimes there are two or more SO#'s in the out dataset that correspond to two or more SO#'s in the ins dataset.
+```{r}
+sum(duplicated(orders))
+head(duplicated(orders), n = 100)
+```
+Apparently, this is because for some of the orders, there are multiple shipments that get logged separately, but still have the same Sales Order ID.
+
+There are 30 exact duplicates in the dataset, most of which are in the first 100 observations.
+
+We can directly remove exact duplicates
+```{r}
+orders <- orders[!duplicated(orders), ]
+```
+
+We now want to remove commissions and refunds as well
+```{r}
+orderslower <- data.frame(apply(orders, 2, tolower))
+
+commissionflag <- apply(orderslower, 1, function(row){
+  any(grepl("commission", row))
+})
+refundflag <- apply(orderslower, 1, function(row){
+  any(grepl("refund", row))
+})
+
+orders <- orders[!(refundflag | commissionflag), ]
+```
+
+Removing duplicates from SO#s, while retaining the NET revenue that comes from the original values
+```{r}
+ordersgrouped <- orders %>%
+  distinct(`SO#`, NET, .keep_all = TRUE)
+
+ordersgrouped <- mutate(ordersgrouped, productdetails = `Accessories/Details`)
+
+ordersgrouped$Ordered <- as_date(as.numeric(ordersgrouped$Ordered) - 25569)
+```
+
+# Time Series Analysis and Visualization
+
+There were a few date entry errors, when the year is 2029.  These were filtered out, along with entries who were missing a date.  This most often comes from the cases where an order that went out has no corresponding SO# in the INs data.  For some reason, when the data was imported into R, the dates got converted to numbers that are 70 years and one day in the future.  I suppose that the one day off is probably due to leap years or perhaps time zones.
+```{r}
+ordersgrouped$Ordered <- as_date(as.numeric(ordersgrouped$Ordered) - 25569)
+
+ordersdates <- filter(ordersgrouped, !is.na(Ordered))
+ordersdates <- filter(ordersdates, !(`SO#` == "16147" | `SO#` == "16148"))
+ordersdates <- filter(ordersdates, Ordered > "2000-01-01")
+ordersdates$Ordered <- as_date(as.numeric(ordersdates$Ordered))
+```
+
+Making a list of dates to fill in the datasets for days that had no orders.
+```{r}
+# Dates from January 2016 to May 2023
+dates16to23 <- as.data.frame(seq(as.Date("2016-01-01"), as.Date("2023-05-31"), by="days"))
+names(dates16to23) <- "Date"
+```
+
+Analyzing number of sales
+```{r}
+# Counting the number of sales per day
+numsales <- ordersdates %>%
+  group_by(Ordered) %>%
+  summarize(num_sales = n())
+
+# Joining together the sales to the empty dates, filling in the days with no sales when necessary
+numsales <- left_join(dates16to23, numsales, by = c("Date" = "Ordered")) %>%
+  mutate(num_sales = replace_na(num_sales, 0),
+         Day = day(Date),
+         Month = month(Date),
+         Year = year(Date))
+```
+
+Creating a time series object and plotting the basic graph
+```{r}
+timedata <- ts(numsales$num_sales, start = 2016, frequency = 365)
+
+autoplot(timedata, linewidth = 0.01) +
+  labs(x = "Date (Day)", y = "Number of Orders",
+       title = "Number of Orders from 2016-Present") +
+  theme_bw()
+```
+
+```{r}
+summary(numsales$num_sales)
+```
+
+Here, the outliers are not as extreme, and on average there were 1.371 orders placed (orders that were shipped) per day from 2016 up until May 2023.  However, this plot is a little hard to look at, so we are going to zoom out and look at months rather than days.
+
+```{r, message = FALSE}
+monthly_numsales <- numsales %>%
+  group_by(Year, Month) %>%
+  summarize(num_sales = sum(num_sales))
+
+# Creating a time series object for the sales per month
+monthlysales <- ts(monthly_numsales$num_sales, start = 2016, frequency = 12)
+monthlysales
+
+autoplot(monthlysales) +
+  labs(x = "Date (Month)", y = "Number of Orders",
+       title = "Number of Orders from 2016-Present") +
+  theme_bw()
+```
+
+
+```{r}
+ggseasonplot(monthlysales) +
+  labs(y = "Number of Sales", 
+       title = "Monthly Sales by Year") +
+  theme_bw()
+```
+
+At a first glance, it is difficult to see a strong trend or pattern.  There seem to be peaks at around May/June and August/September, and quite consistently a peak then drop in November.  I think it would be helpful to replicate with more than just three years' worth of data here.
+
+```{r}
+ggsubseriesplot(monthlysales) +
+  labs(y = "Monthly Sales", 
+       title = "Seasonal Subseries Plot for Monthly Sales") +
+  theme_bw()
+```
+
+This subseries plot shows the consistency of the months leading up to January (Sept-Dec), and sales seem to be quite sporadic over the years during the summer months.
+Looking at the blue lines, which are the averages for each month, it seems like November is the highest average month for number of sales.  Interestingly, there seems to be a pretty consistent dip in the month of July in terms of sales, which I am not sure how to account for.
+
+
+
+# Text Data Cleaning Intermission
+In order to perform further analysis for each of the three companies, we need to find a way to categorize each shipment by what company the product belongs to.  In order to do this, we need to clean a lot of the text data here.
+
+Creating a column of every order and its corresponding number in the "Accessories/Details" column
+```{r}
+# Multiple columns where the product could come from
+productlist <- ordersdates$productdetails
+productlist2 <- ordersdates$Product
+
+# The RegEx "\\d{3}" matches the first three consecutive numbers of each string in productlist
+productids <- str_match(productlist, "\\d{3}")
+productids2 <- str_match(productlist2, "\\d{3}")
+
+# Binding the column to the ordersdates dataset, using the Product column if there was no match in productdetails column.
+ordersdates <- ordersdates %>% 
+  mutate(ordersdates, product_IDs = ifelse(is.na(productids), productids2, productids)) %>%
+  select(product_IDs, everything())
+
+# Converting to a data.frame vector rather than a matrix vector (data type thing)
+ordersdates$product_IDs <- as.vector(ordersdates$product_IDs)
+```
+
+Matching the numbers to their corresponding parent company.
+```{r}
+# Numbers that belong to each respective company
+cid <- c(202, 710, 602, 600, 203, 110, 340, 301)
+felix <- c(920, 950, 750, 751, 960, 940, 901, 900)
+interscan <- c(900)
+
+# Creates column of each company corresponding to the number in the product_IDs column
+companycategories <- case_when(
+  ordersdates$product_IDs %in% cid ~ "CID",
+  tolower(ordersdates$Source.x) == "interscan" ~ "Interscan",
+  tolower(ordersdates$Source.y) == "interscan" ~ "Interscan",
+  ordersdates$product_IDs %in% felix ~ "Felix"
+)
+
+# Now, binding this column together with the orders dataset
+ordersdates <- ordersdates %>%
+  mutate(Company = companycategories) %>%
+  select(Company, everything())
+```
+
+```{r}
+sum(is.na(ordersdates$Company))
+head(filter(ordersdates, is.na(Company))$Product, n = 30)
+```
+Evidently, there are a lot of missing values in the data in terms of which company a given product belongs to.  However, many of the values are orders for parts that are not specified for a specific product.
+
+# More Time Series by Company
+Now, to do the same analysis as before, but with the three companies.
+
+Putting it all in a function to create the plot so I don't have to copy and paste the code over and over.
+```{r}
+TimeSeriesPlot <- function(company, plot_type) {  
+  # Takes a string as input, element of ordersdates$Company
+  
+  dsorders <- ordersdates %>%
+    filter(Company == company)
+    
+    dssales <- dsorders %>%
+      group_by(Ordered) %>%
+      summarize(num_sales = n())
+    
+    dssales <- left_join(dates16to23, dssales, by = c("Date" = "Ordered")) %>%
+      mutate(num_sales = replace_na(num_sales, 0),
+             Day = day(Date),
+             Month = month(Date),
+             Year = year(Date))
+    
+    dsmonthly <- dssales %>%
+      group_by(Year, Month) %>%
+      summarize(num_sales = sum(num_sales))
+    
+    dstimedata <- ts(dsmonthly$num_sales, start = 2016, frequency = 12)
+
+  if(plot_type == "total") {
+    
+    tsplot <- autoplot(dstimedata, linewidth = 0.1) +
+      labs(x = "Date (Month)", y = "Number of Orders",
+           title = paste("Number of Orders from 2016-Present for", company)) +
+      theme_bw()
+    
+    return(tsplot)
+    
+  } else if(plot_type == "seasonal") {
+    
+    tsseasonal <- ggseasonplot(dstimedata) +
+      labs(y = "Number of Sales", 
+           title = paste("Monthly Sales by Year for", company)) +
+      theme_bw()
+    
+    return(tsseasonal)
+    
+  } else if(plot_type == "subseries") {
+    
+    tssubseries <- ggsubseriesplot(dstimedata) +
+      labs(y = "Monthly Sales", 
+           title = paste("Seasonal Subseries Plot for Monthly Sales for", company)) +
+      theme_bw()
+    
+    return(tssubseries)
+    
+  }
+  
+}
+```
+
+```{r, message = FALSE}
+TimeSeriesPlot("CID", plot_type = "total")
+TimeSeriesPlot("Felix", plot_type = "seasonal")
+TimeSeriesPlot("Interscan", plot_type = "subseries")
+TimeSeriesPlot("Felix", plot_type = "total")
+```
+
+## Combining into one plot
+This is a little more difficult than creating many separate plots like in the function above.
+```{r, message=F}
+ordersdates <- ordersdates %>%
+  mutate(YD = as.yearmon(Ordered), Year = year(Ordered)) %>%
+  select(YD, everything()) %>%
+  filter(YD != "Jan 2015") #Some instances of January 2015 filtered out
+
+dates <- ordersdates %>%
+  group_by(YD, Company) %>%
+  summarize(n = n()) %>%
+  filter(!is.na(Company))
+```
+
+```{r}
+ggplot(dates) +
+  geom_line(aes(YD, n, group = Company, color = Company)) +
+  scale_color_manual(values = rainbow(3)) +
+  labs(x = "Date", y = "Number of Sales", title = "Number of Sales by Company 2016 - Present") +
+  theme_bw()
+```
+
+# Day of the Week
+
+```{r}
+ordersdates <- mutate(ordersdates, wday = wday(Ordered, label = T, abbr = F)) %>%
+  select(wday, everything())
+```
+
+```{r}
+datessummarized <- ordersdates %>%
+  group_by(wday) %>%
+  summarize(n = n())
+
+ggplot(datessummarized, aes(wday, n)) +
+    geom_col(fill = "lightblue", color = "black") +
+    labs(x = "Day of the Week", y = "Number of Sales", title = "Number of Sales by Day Ordered") +
+    geom_text(aes(label = sprintf(n/sum(n), fmt = "%#.2f")),
+              position = position_dodge(.9), 
+              vjust = -0.5, 
+              size = 3.5)+
+    theme_bw()
+```
+
+This is the whole aggregate graph across all three companies, where it seems like many of the orders are not placed on Friday or the weekends, most of the orders are placed during the week.
+
+```{r, message = FALSE}
+datessummarizedcompany <- ordersdates %>%
+  group_by(wday, Company) %>%
+  summarize(n = n())
+
+ggplot(datessummarizedcompany, aes(wday, n, fill = Company)) +
+  geom_col(position = "dodge") +
+  geom_text(aes(label = case_when(
+    Company == "CID" ~ sprintf(n/sum(filter(datessummarizedcompany, Company == "CID")$n), fmt = "%#.2f"),
+    Company == "Felix" ~ sprintf(n/sum(filter(datessummarizedcompany, Company == "Felix")$n), fmt = "%#.2f"),
+    Company == "Interscan" ~ sprintf(n/sum(filter(datessummarizedcompany, Company == "Interscan")$n), fmt = "%#.2f"),
+    is.na(Company) ~ sprintf(n/sum(filter(datessummarizedcompany, is.na(Company))$n), fmt = "%#.2f")
+    )), 
+    position = position_dodge(.9), 
+    vjust = -0.5, 
+    size = 3.5) +
+  labs(x = "Day of the Week", y = "Number of Sales", title = "Number of Sales by Day Ordered") +
+  theme_bw()
+```
+
+Now filtered for missing values
+```{r}
+datessummarizedcompany %>%
+  filter(!is.na(Company)) %>%
+  ggplot(aes(wday, n, fill = Company)) +
+    geom_col(position = "dodge") +
+    geom_text(aes(label = case_when(
+      Company == "CID" ~ sprintf(n/sum(filter(datessummarizedcompany, Company == "CID")$n), fmt = "%#.2f"),
+      Company == "Felix" ~ sprintf(n/sum(filter(datessummarizedcompany, Company == "Felix")$n), fmt = "%#.2f"),
+      Company == "Interscan" ~ sprintf(n/sum(filter(datessummarizedcompany, Company == "Interscan")$n), fmt = "%#.2f"),
+      is.na(Company) ~ sprintf(n/sum(filter(datessummarizedcompany, is.na(Company))$n), fmt = "%#.2f")
+      )), 
+      position = position_dodge(.9), 
+      vjust = -0.5, 
+      size = 3.5) +
+    labs(x = "Day of the Week", y = "Number of Sales", title = "Number of Sales by Day Ordered") +
+    theme_bw()
+```
+
+
+This is the graph of sales by day of the week by individual company.  The pattern seems to hold in the same way for each of the companies.  The numbers on the bars signify the proportion of sales from that day, given the sales belong to the specified company.  For example, 23% of the CID sales occur on Monday.
+
+The labels here can be changed to reflect the height of the bars rather than the proportions of the categories themselves if necessary.
+
+```{r}
+DayOrdered <- function(company) {
+  
+  colors <- c("CID" = "red", "Felix" = "green", "Interscan" = "blue")
+  companycolor <- colors[company]
+  
+  dscompany <- ordersdates %>%
+    filter(Company == company) %>%
+    group_by(wday) %>%
+    summarize(n = n())
+  
+  dayofweekplot <- ggplot(dscompany, aes(wday, n)) +
+    geom_col(fill = companycolor, color = "black") +
+    labs(x = "Day of the Week", y = "Number of Sales", title = paste(company, "Number of Sales by Day Ordered")) +
+    geom_text(aes(label = sprintf(n/sum(n), fmt = "%#.2f")),
+              position = position_dodge(.9), 
+              vjust = -0.5, 
+              size = 3.5)+
+    theme_bw()
+  
+  return(dayofweekplot)
+  
+}
+```
+
+```{r}
+DayOrdered("CID")
+DayOrdered("Felix")
+DayOrdered("Interscan")
+```
+
+# Event Significance
+
+Reading in the file of significant events
+```{r}
+Campaigns <- read_excel("My Campaigns 6-6-2023 12-10-53 PM.xlsx")
+Campaigns <- Campaigns %>%
+  mutate(Date = as.Date(`Created On`), Year = year(Date))
+
+# Modifying the dates dataset to include just the year as well
+dates <- dates %>%
+  mutate(Year = year(YD))
+```
+
+Function that makes plots based on year
+```{r}
+EventPlot <- function(year) {
+  
+  yearorders <- dates %>%
+    filter(Year == year)
+  
+  yearplot <- ggplot(yearorders) +
+    geom_line(aes(as.Date(YD), n, group = Company, color = Company), linewidth = 1.25) +
+    scale_color_manual(values = rainbow(3))
+    
+  yearcampaigns <- Campaigns %>%
+    filter(Year == year)
+  
+  for(i in 1:nrow(yearcampaigns)) {
+    
+    yearplot <- yearplot + 
+      geom_vline(xintercept = yearcampaigns$Date[i],
+                 linetype = "longdash")
+    
+    if(nrow(yearcampaigns) > 0) { # If there are no observations, throws an error.
+      yearplot <- yearplot + 
+        geom_text(x = yearcampaigns$Date[i],
+                y = 0,
+                label = yearcampaigns$Name[i],
+                vjust = -0.5,
+                hjust = 0,
+                angle = 90,
+                size = 3)
+      
+    }
+  }
+  
+  yearplot <- yearplot + 
+    theme_bw() +
+    labs(x = "Month", y = "Number of Sales", title = paste("Events and Number of Sales for", year)) +
+    scale_x_date(date_breaks = "1 month", date_labels = "%b")
+  
+  return(yearplot)
+  
+}
+```
+
+```{r}
+EventPlot(2019)
+EventPlot(2021)
+```
+
+Function that makes the same graphs, but with a legend for the vertical lines.
+```{r}
+linecolors <- c("red", "green", "orange", "blue", "lightblue", "brown", "purple", "pink", "gold", "gray", "chartreuse4", "magenta", "cyan", "cyan4", "purple4", "pink4", "darkseagreen")
+
+EventPlotColors <- function(year) {
+  
+  yearorders <- dates %>%
+    filter(Year == year)
+  
+  yearcampaigns <- Campaigns %>%
+    filter(Year == year)
+  
+  yearplot <- ggplot(yearorders) +
+    geom_line(aes(as.Date(YD), n, group = Company, color = Company),
+              linewidth = 1.25) +
+    scale_color_manual(values = rainbow(3)) +
+    new_scale_color() +
+    geom_vline(aes(xintercept = Date, color = Name),
+               yearcampaigns,
+               linewidth = 0.75,
+               linetype = "dashed") +
+    scale_color_manual(values = linecolors) + 
+    guides(color = guide_legend(title = "Name of Event/Conference")) +
+    theme_bw() +
+    labs(x = "Month", y = "Number of Sales", title = paste("Events and Number of Sales for", year)) +
+    scale_x_date(date_breaks = "1 month", date_labels = "%b")
+  
+  return(yearplot)
+  
+}
+```
+
+```{r, message = FALSE}
+EventPlotColors(2019)
+EventPlotColors(2021)
+```
+
+Saving images to my files
+```{r, eval = FALSE}
+for(i in 2016:2023) {
+  ggsave(filename = paste("eventstext", i, ".png", sep = ""),
+         plot = EventPlot(i),
+         path = paste(getwd(), "\\Marketing Sales Visualizations", sep = ""),
+         width = 10,
+         height = 5)
+}
+```
+
+```{r, eval = FALSE}
+for(i in 2016:2023) {
+  ggsave(filename = paste("eventscolors", i, ".png", sep = ""),
+         plot = EventPlotColors(i),
+         path = paste(getwd(), "\\Marketing Sales Visualizations", sep = ""),
+         width = 10,
+         height = 5)
+}
+```
+
+```{r, eval = FALSE}
+for(i in c("CID", "Felix", "Interscan")) {
+  ggsave(filename = paste("subseries", i, ".png", sep = ""),
+         plot = TimeSeriesPlot(i, plot_type = "subseries"),
+         path = paste(getwd(), "\\Marketing Sales Visualizations", sep = ""),
+         width = 10,
+         height = 5)
+}
+```
+
+```{r, eval = FALSE}
+for(i in c("CID", "Felix", "Interscan")) {
+  ggsave(filename = paste("seasonal", i, ".png", sep = ""),
+         plot = TimeSeriesPlot(i, plot_type = "seasonal"),
+         path = paste(getwd(), "\\Marketing Sales Visualizations", sep = ""),
+         width = 10,
+         height = 5)
+}
+```
+
+# Sales by Product
+
+First step is data transformation in order to get a column of each individual product.
+
+Using the product list from the unique products in the SupportCases dataset because it makes a good list.
+```{r}
+SupportCases <- read_excel("All Support Cases 6-2-2023 Support Project.xlsx")
+
+productdf <- tibble(unique(SupportCases$Product))
+productdf <- productdf %>%
+  mutate(num = str_match(`unique(SupportCases$Product)`, "\\d{3}"))
+productdf <- productdf[-c(19, 21, 29, 30, 1, 22, 32, 23, 33), ]
+productdf[6, 2] <- "751 Avocado"
+productdf[20, 2] <- "751 Melon"
+productdf[11, 2] <- "751 Kiwi"
+productdf[19, 2] <- "751 Mango"
+productdf[21, 2] <- "901B"
+productdf[22, 2] <- "901R"
+productdf[23, 2] <- "901D"
+productdf[7, 2] <- "901S"
+colnames(productdf)[1] <- "Product"
+productdf$num <- as.vector(productdf$num)
+```
+
+Manually changing the names of the products that have multiple different products for their corresponding numbers (751, 901).  Using first the "Product" column, and then the "PRODUCTS" column to match the particular words to the products.
+```{r}
+productids4 <- case_when(
+  grepl("avo", tolower(ordersdates$Product)) ~ "751 Avocado",
+  grepl("man", tolower(ordersdates$Product)) ~ "751 Mango",
+  grepl("kiwi", tolower(ordersdates$Product)) ~ "751 Kiwi",
+  grepl("901B", ordersdates$Product) ~ "901B",
+  grepl("901R", ordersdates$Product) ~ "901R",
+  grepl("901D", ordersdates$Product) ~ "901D",
+)
+
+productids3 <- case_when(
+  grepl("avo", tolower(ordersdates$PRODUCTS)) ~ "751 Avocado",
+  grepl("man", tolower(ordersdates$PRODUCTS)) ~ "751 Mango",
+  grepl("kiwi", tolower(ordersdates$PRODUCTS)) ~ "751 Kiwi",
+  grepl("901B", ordersdates$PRODUCTS) ~ "901B",
+  grepl("901R", ordersdates$PRODUCTS) ~ "901R",
+  grepl("901D", ordersdates$PRODUCTS) ~ "901D",
+)
+```
+
+Now changing the product_IDs column in the whole orders dataset.
+```{r}
+ordersdates$product_IDs <- ifelse(!is.na(productids4), productids4, ordersdates$product_IDs)
+ordersdates$product_IDs <- ifelse(!is.na(productids3), productids3, ordersdates$product_IDs)
+ordersdates$product_IDs <- as.character(ordersdates$product_IDs)
+```
+
+Joining the product IDs with the product names in the productdf dataframe.
+```{r}
+ordersdates <- ordersdates %>%
+  left_join(productdf, by = c("product_IDs" = "num")) %>%
+  select(Product.y, everything())
+```
+
+```{r}
+nrow(filter(ordersdates, is.na(Product.y)))
+head(filter(ordersdates, is.na(Product.y))$productdetails, n = 50)
+```
+Only 326 of the sales in the dataset have no corresponding product.  Looking through the productdetails column, however, most of these seem to be parts, tubes, etc, or Interscan sensors/pumps that have no ID yet.
+
+```{r, warning = FALSE}
+arrange(summarize(group_by(ordersdates, Product.y), n = n()), desc(n)) %>%
+  filter(!is.na(Product.y))
+```
+
+The CI-202 had the most sales overall from 2016-2023 according to the dataset that I have.
+
+```{r}
+ProductSalesYr <- function(year) {
+  
+  salesyrs <- filter(ordersdates, Year == year) %>%
+    group_by(Product.y) %>%
+    summarize(n = n()) %>%
+    arrange(desc(n)) %>%
+    filter(!is.na(Product.y))
+  
+  productbarchart <- ggplot(salesyrs, aes(fct_reorder(Product.y, n), n)) +
+    geom_col(fill = "skyblue", color = "black") +
+    theme_bw() +
+    coord_flip() +
+    labs(x = "Product", y = "Number of Sales", title = paste("Number of Sales by Product", year)) +
+    geom_text(aes(label = n), hjust = -0.2) +
+    scale_y_continuous(limits = c(0, max(salesyrs$n, na.rm = T) + ceiling(max(salesyrs$n, na.rm = T) * 0.05)))
+  
+  return(list(salesyrs, productbarchart))
+  
+}
+```
+
+```{r}
+ProductSalesYr(2023)[[1]]
+ProductSalesYr(2023)[[2]]
+```
+
+Saving the number of sales by product by year datasets
+```{r, eval = FALSE}
+for(i in 2016:2023) {
+  ggsave(filename = paste("SalesByProduct", i, ".png", sep = ""),
+         plot = ProductSalesYr(i)[[2]],
+         path = paste(getwd(), "\\Marketing Sales Visualizations\\Product Sales by Year", sep = ""),
+         width = 10,
+         height = 5)
+}
+```
+
+Product sales from 2016 to 2023
+```{r, message = FALSE}
+datesproduct <- ordersdates %>%
+  group_by(YD, Product.y) %>%
+  summarize(n = n()) %>%
+  filter(!is.na(Product.y)) %>%
+  mutate(surrogate = paste(as.character(YD), Product.y))
+```
+
+```{r}
+products <- unique(ordersdates$Product.y)
+```
+
+Including the months in which a given product had no sales
+```{r, message = FALSE, eval = FALSE}
+months16to23 <- cbind.data.frame(rep(products, 89), rep(as.yearmon(seq(as.Date("2016-01-01"), as.Date("2023-05-01"), by = "months")), 23))
+names(months16to23) <- c("Product", "Date")
+months16to23[, 2] <- as.yearmon(months16to23[, 2])
+months16to23 <- mutate(months16to23, surrogate = paste(as.character(Date), Product))
+
+datesproduct <- left_join(months16to23, datesproduct) %>%
+  mutate(n = replace_na(n, 0))
+```
+
+Function that creates a graph of the product sales given a particular product
+```{r}
+AggProductSales <- function(product) {
+  
+  ds <- datesproduct %>%
+    filter(Product == product)
+  
+  productplot <- ggplot(ds, aes(as_date(Date), n)) +
+    geom_line(linewidth = 0.65) +
+    theme_bw() +
+    labs(x = "Date", y = "Number of Sales", title = paste("Sales for the", product, "2016 - Present")) +
+    scale_x_date(limits = c(as_date("2016-01-01"), as_date("2024-01-01")), breaks = seq.Date(as_date("2016-01-01"), as_date("2024-01-01"), by = "year")) +
+    scale_y_continuous(limits = c(0, max(ds$n)))
+  
+  return(productplot)
+  
+}
+```
+
+```{r, eval = FALSE}
+for(i in products) {
+  ggsave(filename = paste("AggregateSalesByProduct", i, ".png", sep = ""),
+         plot = AggProductSales(i),
+         path = paste(getwd(), "\\Marketing Sales Visualizations\\Sales by Product 2016 Present", sep = ""),
+         width = 10,
+         height = 5)
+}
+```
+
+# Revenue by Country
+
+```{r, eval = FALSE}
+View(outshipping)
+```
+
+```{r}
+countryds <- outshipping
+
+countryds$`PACK DATE` <- as_date(as.numeric(countryds$`PACK DATE`) - 25569)
+
+countryds <- countryds %>%
+  mutate(Year = year(`PACK DATE`)) %>%
+  filter(Year == 2022)
+
+countryds$COUNTRY <- toupper(countryds$COUNTRY)
+```
+
+Calculating revenue
+```{r}
+countryds$NET <- as.numeric(countryds$NET)
+
+countrydsoverall <- countryds %>%
+  group_by(COUNTRY) %>%
+  summarize(SumRevenue = sum(NET, na.rm = TRUE)) %>%
+  arrange(desc(SumRevenue))
+
+sum(is.na(countryds$COUNTRY))
+```
+
+```{r, eval = FALSE}
+countrydsbrand <- countryds %>%
+  group_by(COUNTRY, Company) %>%
+  summarize(SumRevenue = sum(NET, na.rm = TRUE)) %>%
+  arrange(Company, desc(SumRevenue))
+```
+
+
+
+
