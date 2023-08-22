@@ -1,0 +1,582 @@
+---
+title: "Quotes and Orders"
+author: "Thomas Sato"
+date: "21 June 2023 - 17 August 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Import Packages
+```{r, message = FALSE}
+library(tidyverse)
+library(tidytext)
+library(readxl)
+library(lubridate)
+library(zoo)
+```
+
+Reading in data
+```{r, warning = FALSE}
+AllQuotes <- read_excel("All Quotes 6-21-2023 9-51-10 AM.xlsx")
+AllOrders <- read_excel("All Orders 6-21-2023 10-55-50 AM.xlsx")
+opportunities <- read_excel("All Opportunities 6-22-2023 12-33-39 PM.xlsx")
+```
+
+# Data Import and Cleaning
+This is a copy of the code from the Sales-Project.Rmd file without the comments, but running this chunk of code will make the dataset that we want to export for analysis.
+This code chunk will not show up in the knitted html file.
+
+```{r, message = FALSE, warning = FALSE, include = FALSE}
+monthslists <- excel_sheets("Orderlist 2023 081723.xlsm")
+
+outs <- monthslists[grepl("out", tolower(monthslists))]
+ins <- monthslists[grepl("in", tolower(monthslists))]
+
+outdatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[1],
+                       skip = 1, col_types = "text")
+
+for(i in seq(1:(length(outs)))) {
+  
+  outdataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[i],
+                           col_types = "text", skip = 1)
+  
+  outdatasets <- bind_rows(outdatasets, outdataset)
+
+}
+
+outdatasets <- outdatasets %>%
+        mutate(`Accessories/Details` = ifelse(is.na(`Accessories/Details`), `PRODUCTS DESCRIPTION`, `Accessories/Details`),
+               `Accessories/Details` = ifelse(is.na(`Accessories/Details`), PRODUCTS, `Accessories/Details`),
+               `SO#` = ifelse(is.na(`SO#`), `INV / SO #`, `SO#`),
+               `SO#` = ifelse(is.na(`SO#`), `SO #`, `SO#`)) %>%
+        select(`Accessories/Details`, everything())
+
+indatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = ins[1], col_types = "text")
+colnames(indatasets)[1] = "Source"
+
+for(i in seq(1:(length(ins)-1))) {
+  
+  indataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = ins[i+1],
+                          col_types = "text")
+
+  colnames(indataset)[1] <- "Source"
+  
+  indatasets <- bind_rows(indatasets, indataset)
+  
+}
+
+outshipping <- filter(outdatasets[, 1:18], !is.na(Source) | !is.na(`SO#`))
+outshipping <- filter(outshipping, !(Source %in% c("REPAIR", "Repair", "repair")))
+outshipping <- filter(outshipping, !startsWith(`SO#`, "RMA"))
+inorders <- filter(indatasets[, 1:11], !is.na(Source) | !(Source %in% c("REPAIR", "Repair", "repair")))
+inorders <- filter(inorders, !startsWith(SO, "RMA"))
+
+orders <- left_join(outshipping, inorders, by = c(`SO#` = "SO"))
+orders <- orders[!duplicated(orders), ]
+
+orderslower <- data.frame(apply(orders, 2, tolower))
+
+commissionflag <- apply(orderslower, 1, function(row){
+  any(grepl("commission", row))
+})
+refundflag <- apply(orderslower, 1, function(row){
+  any(grepl("refund", row))
+})
+
+orders <- orders[!(refundflag | commissionflag), ]
+
+ordersgrouped <- orders %>%
+  distinct(`SO#`, NET, .keep_all = TRUE)
+
+ordersgrouped <- mutate(ordersgrouped, productdetails = `Accessories/Details`)
+
+ordersgrouped$Ordered <- as_date(as.numeric(ordersgrouped$Ordered) - 25569)
+
+ordersdates <- filter(ordersgrouped, !is.na(Ordered))
+ordersdates <- filter(ordersdates, !(`SO#` == "16147" | `SO#` == "16148"))
+ordersdates <- filter(ordersdates, Ordered > "2000-01-01")
+ordersdates$Ordered <- as_date(as.numeric(ordersdates$Ordered))
+
+productlist <- ordersdates$productdetails
+productlist2 <- ordersdates$Product
+
+productids <- str_match(productlist, "\\d{3}")
+productids2 <- str_match(productlist2, "\\d{3}")
+
+ordersdates <- ordersdates %>% 
+  mutate(ordersdates, product_IDs = ifelse(is.na(productids), productids2, productids)) %>%
+  select(product_IDs, everything())
+
+ordersdates$product_IDs <- as.vector(ordersdates$product_IDs)
+
+cid <- c(202, 710, 602, 600, 203, 110, 340, 301)
+felix <- c(920, 950, 750, 751, 960, 940, 901, 900)
+interscan <- c(900)
+
+companycategories <- case_when(
+  ordersdates$product_IDs %in% cid ~ "CID",
+  tolower(ordersdates$Source.x) == "interscan" ~ "Interscan",
+  tolower(ordersdates$Source.y) == "interscan" ~ "Interscan",
+  ordersdates$product_IDs %in% felix ~ "Felix"
+)
+
+ordersdates <- ordersdates %>%
+  mutate(Company = companycategories) %>%
+  mutate(YD = as.yearmon(Ordered), Year = year(Ordered)) %>%
+  select(YD, everything()) %>%
+  filter(YD != "Jan 2015") %>%
+  mutate(wday = wday(Ordered, label = T, abbr = F)) %>%
+  select(Company, wday, everything())
+
+SupportCases <- read_excel("All Support Cases 6-2-2023 Support Project.xlsx")
+
+productdf <- tibble(unique(SupportCases$Product))
+productdf <- productdf %>%
+  mutate(num = str_match(`unique(SupportCases$Product)`, "\\d{3}"))
+productdf <- productdf[-c(19, 21, 29, 30, 1, 22, 32, 23, 33), ]
+productdf[6, 2] <- "751 Avocado"
+productdf[20, 2] <- "751 Melon"
+productdf[11, 2] <- "751 Kiwi"
+productdf[19, 2] <- "751 Mango"
+productdf[21, 2] <- "901B"
+productdf[22, 2] <- "901R"
+productdf[23, 2] <- "901D"
+productdf[7, 2] <- "901S"
+colnames(productdf)[1] <- "Product"
+productdf$num <- as.vector(productdf$num)
+
+productids4 <- case_when(
+  grepl("avo", tolower(ordersdates$Product)) ~ "751 Avocado",
+  grepl("man", tolower(ordersdates$Product)) ~ "751 Mango",
+  grepl("kiwi", tolower(ordersdates$Product)) ~ "751 Kiwi",
+  grepl("901B", ordersdates$Product) ~ "901B",
+  grepl("901R", ordersdates$Product) ~ "901R",
+  grepl("901D", ordersdates$Product) ~ "901D",
+)
+
+productids3 <- case_when(
+  grepl("avo", tolower(ordersdates$PRODUCTS)) ~ "751 Avocado",
+  grepl("man", tolower(ordersdates$PRODUCTS)) ~ "751 Mango",
+  grepl("kiwi", tolower(ordersdates$PRODUCTS)) ~ "751 Kiwi",
+  grepl("901B", ordersdates$PRODUCTS) ~ "901B",
+  grepl("901R", ordersdates$PRODUCTS) ~ "901R",
+  grepl("901D", ordersdates$PRODUCTS) ~ "901D",
+)
+
+ordersdates$product_IDs <- ifelse(!is.na(productids4), productids4, ordersdates$product_IDs)
+ordersdates$product_IDs <- ifelse(!is.na(productids3), productids3, ordersdates$product_IDs)
+
+ordersdates <- ordersdates %>%
+  left_join(productdf, by = c("product_IDs" = "num")) %>%
+  mutate(`END USER` = ifelse(`END USER` == "same", `CUSTOMER'S NAME`, `END USER`)) %>%
+  mutate(customer = tolower(ifelse(is.na(`END USER`), `CUSTOMER'S NAME`, `END USER`))) %>%
+  select(Product.y, everything()) %>%
+  arrange(Ordered)
+```
+
+
+# 4:  First-time User Conversion Rate - Acquisition Rate
+
+## Data Cleaning
+
+```{r}
+opportunities <- mutate(opportunities, `Actual Close Date` = as.Date(`Actual Close Date`))
+```
+
+
+## Data Exploration
+
+### All Opportunities Dataset
+Looking at the distribution of the status of opportunities.
+```{r}
+table(opportunities$Status)
+prop.table(table(opportunities$Status))*100
+```
+
+Looking at the ranges of the date variables in Opportunities
+```{r}
+min(opportunities$`Actual Close Date`, na.rm = TRUE)
+max(opportunities$`Actual Close Date`, na.rm = TRUE)
+```
+
+```{r}
+min(opportunities$`Create Date`, na.rm = TRUE)
+max(opportunities$`Create Date`, na.rm = TRUE)
+```
+
+In this dataset, the date that the opportunities were created is in 2018, whereas the date that they start closing is 2013.
+
+Now looking at revenue
+```{r}
+(estopportunities <- sum(opportunities$`Est. Revenue`, na.rm = TRUE))
+(actopportunities <- sum(opportunities$`Actual Revenue`, na.rm = TRUE))
+
+# Filtering such that we have only opportunities that are not listed as "Open"
+closedopportunities <- filter(opportunities, Status != "Open")
+
+(estclosed <- sum(closedopportunities$`Est. Revenue`, na.rm = TRUE))
+(actclosed <- sum(closedopportunities$`Actual Revenue`, na.rm = TRUE))
+```
+
+
+### All Quotes Dataset
+Looking at the date ranges
+```{r}
+min(AllQuotes$`Created On`)
+max(AllQuotes$`Created On`)
+```
+
+The "Created On" column in All Quotes and the "Create Date" column in All Opportunities both start on the same date, which is 9/4/2018.
+
+Looking at revenue.
+```{r}
+sum(AllQuotes$`TotalAmount`)
+sum(AllQuotes$`Total Amount`)
+sum(AllQuotes$`Total Amount (old)`)
+```
+
+All of the sums of the different "totals" columns are slightly different, but all add up to around $126,000,000.
+
+We will use "Total Amount" for the rest of the analysis.
+```{r}
+(estquotes <- sum(AllQuotes$`Total Amount`))
+```
+
+Difference between All Opportunities and All Quotes:
+```{r}
+# Including "Open" opportunities
+estopportunities - estquotes
+
+# Excluding "Open" opportunities
+estclosed - estquotes
+```
+
+Now, we will look at the differences in estimated revenue taking out the opportunities that were closed before 9/4/2018.  
+```{r}
+opportunitiesdatesquotes <- filter(opportunities, `Actual Close Date` >= "2018-09-04")
+opportunitiesdatesclosed <- filter(opportunitiesdatesquotes, Status != "Open")
+```
+
+```{r}
+((estopportunitiesdates <- sum(opportunitiesdatesquotes$`Est. Revenue`, na.rm = TRUE)))
+((estcloseddates <- sum(opportunitiesdatesclosed$`Est. Revenue`, na.rm = TRUE)))
+
+# Including "Open" opportunities
+estopportunitiesdates - estquotes
+
+# Excluding "Open" opportunities
+estcloseddates - estquotes
+```
+
+In terms of estimated revenue, there remains a difference of $47,334,633 between the All Opportunities dataset (filtered for closed opportunities and actual close dates after 9/4/2018) and the All Quotes dataset.
+
+
+### All Orders Dataset
+Looking at the date ranges
+```{r}
+min(AllOrders$`Created On`)
+max(AllOrders$`Created On`)
+```
+
+```{r}
+min(AllOrders$`Date Fulfilled`, na.rm = TRUE)
+max(AllOrders$`Date Fulfilled`, na.rm = TRUE)
+```
+
+Revenue according to All Orders
+```{r}
+(actorders <- sum(AllOrders$`Total Amount`, na.rm = TRUE))
+```
+
+Revenue according to All Opportunities filtered for dates
+```{r}
+opportunitiesdatesOrders <- filter(opportunities, `Actual Close Date` >= "2020-07-20")
+(actopportunitiesOrders <- sum(opportunitiesdatesOrders$`Actual Revenue`, na.rm = TRUE))
+opportunitiesdatesOrdersclosed <- filter(opportunitiesdatesOrders, Status != "Open")
+(actopportunitiesOrdersclosed <- sum(opportunitiesdatesOrdersclosed$`Actual Revenue`, na.rm = TRUE))
+```
+
+
+Difference between All Opportunites and All Orders in terms of Actual Revenue
+```{r}
+# Including all opportunities
+actopportunitiesOrders - actorders
+
+# Excluding "Open" opportunities
+actopportunitiesOrdersclosed - actorders
+```
+
+## Orderlist Datasets
+```{r}
+(actcloseddates <- sum(opportunitiesdatesclosed$`Actual Revenue`, na.rm = TRUE))
+```
+
+
+```{r}
+orderlistdates <- filter(ordersdates, Ordered >= "2018-09-04")
+orderlistdates$NET <- as.numeric(orderlistdates$NET)
+(orderlistrev <- sum(orderlistdates$NET, na.rm = TRUE))
+```
+
+Differences between Orderlist (after data cleaning) and All Opportunities
+```{r}
+actopportunities - orderlistrev
+actclosed - orderlistrev
+actcloseddates - orderlistrev
+```
+
+Diferences between Orderlist (before data cleaning) and All Opportunities
+Difficult to tell with the out datasets what date to filter for, this is by PACK DATE.
+```{r, warning = FALSE}
+outshipping$`PACK DATE` <- as_date(as.numeric(outshipping$`PACK DATE`) - 25569)
+outshippingdates <- filter(outshipping, `PACK DATE` >= "2018-09-04")
+
+(outshippingrev <- sum(as.numeric(outshippingdates$NET), na.rm = TRUE))
+```
+
+```{r}
+actopportunities - outshippingrev
+actclosed - outshippingrev
+actcloseddates - outshippingrev
+```
+In the process of data cleaning and joining tables together, some of the sales got lost, it appears.  I would trust the Orderlist before all of that data cleaning in terms of the net revenue, since some of the analysis in product unit sales does not include certain parts and whatnot that were profitable.
+
+## Conversion Rate Graphs Using All Opportunities
+
+Same kind of analysis from the Sales project to get a column for the company that each product belonged to using the "Products" column
+```{r}
+InterscanIndicators = c("sensor", "gasd", "halimeter")
+
+closedopportunities <- closedopportunities %>%
+  mutate(Company = ifelse(startsWith(Products, "CI"), "CID", "Felix"))
+
+closedopportunities <- closedopportunities %>%
+  mutate(Company = ifelse(rowSums(sapply(InterscanIndicators, function(expr) grepl(expr, tolower(closedopportunities$Products)))), "Interscan", Company)) %>%
+  mutate(Company = ifelse(startsWith(Products, "F"), "Felix", Company)) %>%
+  mutate(Company = ifelse(startsWith(Products, "CI"), "CID", Company),
+         YD = as.yearmon(`Create Date`),
+         Year = year(`Create Date`)) %>%
+  select(Products, Company, YD, Year, everything())
+```
+
+Writing this new dataset in order to import into Power BI (Need to do the text transformations in R)
+```{r, eval = FALSE}
+write_csv(closedopportunities, "AllOpportunities.csv")
+```
+
+
+
+
+```{r}
+colors <- c("CID" = "red", "Felix" = "green", "Interscan" = "blue")
+
+Conversion <- function(dataset, company, year) {
+  
+  ds <- dataset %>%
+    filter(Company %in% company, Year == year)
+  
+  estimated <- sum(ds$`Est. Revenue`, na.rm = TRUE)
+  actual <- sum(ds$`Actual Revenue`, na.rm = TRUE)
+  
+  conversionPlot <- ds %>%
+    group_by(YD) %>%
+    summarize(conversionrate = sum(`Est. Revenue`, na.rm = TRUE) / sum(`Actual Revenue`, na.rm = TRUE)) %>%
+    ggplot(aes(YD, conversionrate)) +
+      geom_col(fill = colors[company], color = "black") +
+      labs(x = "Date", y = "Conversion Rate", title = paste("Conversion Rate for", company, "in", as.character(year))) +
+      theme_bw()
+  
+  return(conversionPlot)
+  
+}
+```
+
+```{r}
+Conversion(closedopportunities, "CID", 2020)
+Conversion(closedopportunities, "Felix", 2020)
+#Conversion(opportunitiesdatesclosed, "CID", 2019)
+#Conversion(opportunitiesdatesclosed, "Felix", 2020)
+```
+
+## All Opportunities Vs All Quotes
+
+Looking at discrepencies between the All Opportunities estimated revenue and the All Quotes estimated revenue.
+```{r}
+closedopportunitiesyears <- closedopportunities %>%
+  group_by(Year) %>%
+  summarize(estrevenue = sum(`Est. Revenue`, na.rm = T)) %>%
+  na.omit()
+
+AllQuotes <- AllQuotes %>%
+  mutate(Year = year(`Created On`),
+         YD = as.yearmon(`Created On`))
+
+quotesyears <- AllQuotes %>%
+  group_by(Year) %>%
+  summarize(estrevenue = sum(`Total Amount`))
+
+estimatedrevenuebyyear <- left_join(closedopportunitiesyears, quotesyears, by = c("Year" = "Year"))
+
+names(estimatedrevenuebyyear) <- c("Year", "All Opportunities", "All Quotes")
+
+estimatedrevenuebyyear <- pivot_longer(estimatedrevenuebyyear, cols = c(`All Opportunities`, `All Quotes`), names_to = "DataSource", values_to = "estrevenue")
+```
+
+```{r}
+ggplot(estimatedrevenuebyyear, aes(Year, estrevenue, fill = DataSource)) +
+  geom_col(position = "dodge") +
+  theme_light() +
+  labs(y = "Estimated Revenue", title = "Estimated Revenue of All Opportunities and All Quotes by Year") +
+  scale_x_continuous(limits = c(2016.9, 2024), breaks = seq(2018, 2023))
+```
+
+
+```{r}
+closedopportunities %>%
+  filter(Company == "Interscan", YD == "Apr 2023")
+```
+
+```{r, eval = FALSE}
+write_csv(closedopportunities %>% filter(Company == "Interscan", YD == "Apr 2023"),
+          "Interscan April 2023 Opportunities.csv")
+```
+
+Seeing the discrepencies for just the month of February 2023.
+```{r}
+feb23closed <- closedopportunities %>%
+  filter(YD == "Jan 2023") %>%
+  mutate(day = day(`Created On`)) %>%
+  select(day, everything()) %>%
+  group_by(day) %>%
+  summarize(`All Opportunities` = sum(`Actual Revenue`, na.rm = T))
+
+feb23quotes <- AllQuotes %>%
+  filter(YD == "Jan 2023") %>%
+  mutate(day = day(`Created On`)) %>%
+  select(day, everything()) %>%
+  group_by(day) %>%
+  summarize(`All Quotes` = sum(`Total Amount`, na.rm = T))
+
+feb23 <- full_join(feb23quotes, feb23closed, by = c("day" = "day")) %>%
+  pivot_longer(c(`All Opportunities`, `All Quotes`), names_to = "Data Source", values_to = "SumRev")
+
+ggplot(feb23, aes(day, SumRev)) +
+  geom_col(aes(fill = `Data Source`), position = "dodge") +
+  theme_light() +
+  labs(title = "Sum Estimated Revenue February 2023", x = "Day of February", y = "Sum Estimated Revenue")
+```
+
+Looking at the opportunities that were listed as having more actual revenue than estimated revenue.
+```{r}
+closedopportunities <- closedopportunities %>%
+  mutate(difference = `Est. Revenue` - `Actual Revenue`) %>%
+  select(difference, `Sales Order`, everything())
+
+diffgreaterthanzeroclosedopportunities <- closedopportunities %>%
+  filter(difference < 0)
+```
+
+
+```{r, eval = FALSE}
+write_csv(diffgreaterthanzeroclosedopportunities, "DifferencesGreaterThanZero.csv")
+```
+
+## Opportunities Vs Orderlist
+
+Attempting to cross check the orders from closed opportunities with Orderlist.
+```{r}
+diffgreaterthanzeroclosedopportunities <- select(diffgreaterthanzeroclosedopportunities, difference, `Sales Order`, Products, Company, YD, Year, `Created On`, `Actual Revenue`, `Est. Revenue`, `Source Campaign`, `Potential Customer`, Status)
+
+opportunitiesorderlist <- left_join(diffgreaterthanzeroclosedopportunities, inorders, by = c("Sales Order" = "SO")) %>%
+  left_join(outshipping, by = c("Sales Order" = "SO#")) %>%
+  mutate(`Revenue (IN)` = as.numeric(Amount),
+         `Revenue (OUT)` = as.numeric(NET),
+         `Revenue (Opportunities)` = as.numeric(`Actual Revenue`),
+         `Actual Revenue Difference (IN)` = `Revenue (Opportunities)` - `Revenue (IN)`,
+         `Actual Revenue Difference (OUT)` = `Revenue (Opportunities)` - `Revenue (OUT)`,
+         `Actual - Estimated (Opportunities)` = difference) %>%
+  select(`Actual Revenue Difference (IN)`, `Actual Revenue Difference (OUT)`, `Revenue (Opportunities)`, `Revenue (IN)`, `Revenue (OUT)`, `Actual - Estimated (Opportunities)`, `Est. Revenue`, `Created On`, `Sales Order`, `Status`)
+```
+
+```{r}
+ggplot(filter(opportunitiesorderlist, `Actual Revenue Difference (IN)` < 10000 & `Actual Revenue Difference (IN)` > -10000), aes(`Actual Revenue Difference (IN)`)) +
+  geom_histogram(binwidth = 100)
+```
+
+```{r, eval = FALSE}
+write_csv(opportunitiesorderlist, "ClosedOpportunitiesWithADifferenceInEstimatedAndActualRevenueGreaterThanZeroJoinedWithTheOutsAndInsFromOrderlistBySalesOrderNumber.csv")
+```
+
+
+# Replacing The Actual Revenue in Opportunities with the NET Column in Orderlist, Given That The Difference Between The Estimated and Actual Revenue in Opportunities is Less Than Zero.
+
+```{r}
+opportunitiesorderlist <- opportunitiesorderlist %>%
+  filter(!is.na(`Sales Order`)) %>%
+  group_by(`Sales Order`) %>%
+  summarize(NETOut = sum(`Revenue (OUT)`, na.rm = TRUE))
+
+closedopportunities <- closedopportunities %>%
+  left_join(opportunitiesorderlist, by = c("Sales Order" = "Sales Order")) %>%
+  mutate(`ACTUAL REVENUE` = ifelse(is.na(NETOut), `Actual Revenue`, NETOut)) %>%
+  select(`ACTUAL REVENUE`, `Actual Revenue`, `Sales Order`, NETOut, everything())
+```
+
+```{r, eval = FALSE}
+write_csv(closedopportunities, "AllClosedOpportunities.csv")
+```
+
+Note:  There are 315 duplicated sales order numbers in the opportunities data.
+```{r}
+sum(duplicated(na.omit(closedopportunities$`Sales Order`)))
+```
+
+```{r}
+sum(is.na(closedopportunities$Products))
+```
+
+# Checking Acquisition Rate Inaccuracies
+
+```{r, message = FALSE, eval = FALSE}
+closedopportunities %>%
+  group_by(YD, Company) %>%
+  summarize(SumAct = sum(`ACTUAL REVENUE`, na.rm = T), SumEst = sum(`Est. Revenue`, na.rm = T)) %>%
+  filter(is.na(Company)) %>%
+  write_csv("SumRevenueOpportunitiesMissingValues.csv")
+```
+These inaccuracies appear because there is no product listed in the Opportunity, so there is no way to tie it to any of the brands.  However, as time progressed it looks like the error has been reduced, where there is no value for the month or a 0.00 value.
+
+No missing values in Dec 2022 for the Product column.
+```{r}
+Dec2022Opp <- closedopportunities %>%
+  filter(YD == "Dec 2023")
+```
+
+
+# Fruit Attraction 2022
+
+Trying to look at any sales that came from Fruit Attraction 2022.
+```{r}
+AllLeads <- read_excel("All Leads 7-13-2023 2-11-54 PM.xlsx")
+
+FA2022 <- filter(opportunities, `Source Campaign` == "Fruit Attraction 2022")
+
+FA2022 <- filter(outshipping, Source == "Frt Attr")
+
+FA2022 <- filter(AllLeads, `Source Campaign` == "Fruit Attraction 2022")
+```
+
+# Referrals
+
+```{r}
+referrals <- filter(opportunities, `Opportunity Type` == "Referral")
+referralslost <- filter(referrals, Status == "Lost")
+referralslostexclusivedistributorterritory <- filter(referralslost, `Status Reason` == "Exclusive Distributor Territory") %>% select(`Status Reason`, everything())
+```
+10,495 referrals, 864 listed as Exclusive Distributor Territory
+
+
+

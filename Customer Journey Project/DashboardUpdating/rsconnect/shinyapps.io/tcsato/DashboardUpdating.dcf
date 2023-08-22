@@ -1,0 +1,12 @@
+name: DashboardUpdating
+title: DashboardUpdating
+username: tcsato
+account: tcsato
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 9654326
+bundleId: 7597788
+url: https://tcsato.shinyapps.io/DashboardUpdating/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

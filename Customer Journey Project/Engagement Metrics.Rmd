@@ -1,0 +1,309 @@
+---
+title: "Engagement Metrics"
+author: "Thomas Sato"
+date: "26 June 2023 - 17 August 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Import packages
+```{r, message = FALSE}
+library(tidyverse)
+library(readxl)
+library(tidytext)
+```
+
+Published Papers is the only thing that actually matters in terms of the visualizations in Power BI, but the Felix products and Sensor Express code are also included for posterity's sake.
+
+
+Published Papers Import
+```{r}
+excel_sheets("PublishedPapers.xlsx")
+Papers110 <- as_tibble(read_excel("PublishedPapers.xlsx", sheet = "Ci-110"))
+Papers202 <- as_tibble(read_excel("PublishedPapers.xlsx", sheet = "CI-202"))
+Papers203 <- as_tibble(read_excel("PublishedPapers.xlsx", sheet = "CI-203"))
+Papers340 <- as_tibble(read_excel("PublishedPapers.xlsx", sheet = "CI-340"))
+Papers600 <- as_tibble(read_excel("PublishedPapers.xlsx", sheet = "CI-600"))
+Papers602 <- as_tibble(read_excel("PublishedPapers.xlsx", sheet = "CI-602"))
+Papers710 <- as_tibble(read_excel("PublishedPapers.xlsx", sheet = "CI-710"))
+
+# Rename column in CI-203 Papers
+Papers203 <- rename(Papers203, "Abstract" = `...7`)
+```
+
+Terms Import
+```{r}
+excel_sheets("Published Papers Terms.xlsx")
+Terms110 <- as_tibble(read_excel("Published Papers Terms.xlsx", sheet = "CI-110"))
+Terms202203 <- as_tibble(read_excel("Published Papers Terms.xlsx", sheet = "CI-202 203"))
+Terms340 <- as_tibble(read_excel("Published Papers Terms.xlsx", sheet = "CI-340"))
+Terms600602 <- as_tibble(read_excel("Published Papers Terms.xlsx", sheet = "CI-600 602"))
+Terms710 <- as_tibble(read_excel("Published Papers Terms.xlsx", sheet = "CI-710S"))
+```
+
+# Terms Analysis
+
+First, binding the tables together for the 202 and 203, and the 600 and 602
+```{r}
+# Coercing data tyoes in order to be able to bind.
+Papers202$Date <- as.character(Papers202$Date)
+Papers202203 <- bind_rows(Papers202, Papers203)
+
+Papers600602 <- bind_rows(Papers600, Papers602)
+```
+
+```{r}
+PapersTransformation <- function(paper, terms) {
+  
+  paper <- paper %>%
+    mutate(terms = tolower(gsub(" ", "", Abstract)))
+
+  termstemp <- terms %>%
+    rename("Terms1" = colnames(terms)[1]) %>%
+    mutate(terms = tolower(gsub(" ", "", Terms1)))
+  
+  allabstracts <- paste(paper$terms, collapse = "")
+  
+  term_frequency <- c()
+  
+  for (i in 1:length(termstemp$terms)) {
+    
+    term_frequency[i] <- str_count(allabstracts, termstemp$terms[i])
+    
+  }
+  
+  result <- as_tibble(cbind(termstemp$Terms1, as.numeric(term_frequency), colnames(terms)[1]))
+  
+  result <- arrange(result, desc(term_frequency))
+  
+  return(result)
+  
+}
+```
+
+```{r}
+PapersTransformation(Papers110, Terms110)
+```
+
+```{r}
+Papers <- list(Papers110, Papers202203, Papers340, Papers600602, Papers710)
+Terms <- list(Terms110, Terms202203, Terms340, Terms600602, Terms710)
+```
+
+```{r}
+papersterms <- tibble()
+
+for(i in 1:length(Papers)) {
+  
+  temppapers <- PapersTransformation(Papers[[i]], Terms[[i]])
+  papersterms <- bind_rows(papersterms, temppapers)
+  
+}
+```
+
+```{r}
+papersterms <- rename(papersterms, "Term" = "V1", "Frequency" = "V2", "Product" = "V3")
+papersterms <- na.omit(papersterms)
+```
+
+```{r, eval = FALSE}
+write_csv(papersterms, "PublishedPapersTermFrequency.csv")
+```
+
+# CI-710
+
+```{r}
+Terms710$`CI-710`[Terms710$`CI-710` == "G"] <- " G "
+Terms710$`CI-710`[Terms710$`CI-710` == "SI"] <- " SI "
+Terms710$`CI-710`[Terms710$`CI-710` == "NI"] <- " NI "
+Terms710$`CI-710`[Terms710$`CI-710` == "BI"] <- " BI "
+Terms710$`CI-710`[Terms710$`CI-710` == "PI"] <- " PI "
+Terms710$`CI-710`[Terms710$`CI-710` == "PI"] <- " PRI "
+
+
+OneLetterTerms710 <- c(" G ", " SI ", " NI ", " BI ", " PI ", " PRI ")
+OneLetterTerms710 <- filter(Terms710, `CI-710` %in% OneLetterTerms710)
+
+
+PapersTransformation(Papers710, Terms710)
+```
+
+```{r}
+PapersTransformation710 <- function(paper, terms) {
+  
+  paper <- paper %>%
+    mutate(terms = tolower(Abstract))
+
+  termstemp <- terms %>%
+    rename("Terms1" = colnames(terms)[1]) %>%
+    mutate(terms = tolower(Terms1))
+  
+  allabstracts <- paste(paper$terms, collapse = "")
+  
+  term_frequency <- c()
+  
+  for (i in 1:length(termstemp$terms)) {
+    
+    term_frequency[i] <- str_count(allabstracts, termstemp$terms[i])
+    
+  }
+  
+  result <- as_tibble(cbind(termstemp$Terms1, as.numeric(term_frequency), colnames(terms)[1]))
+  
+  result <- arrange(result, desc(term_frequency))
+  
+  return(result)
+  
+}
+```
+
+```{r}
+PapersTransformation710(Papers710, OneLetterTerms710)
+```
+
+
+
+
+
+
+# Content Analysis
+
+Top five words for each URL in the CI-110 data.  Ties for most common words are included, which is why for some there are more than five words in the "word" column.
+```{r, message = FALSE}
+publishedpaperstop5 <- unnest_tokens(Papers110, word, Abstract) %>%
+  group_by(URL, word) %>%
+  count() %>%
+  arrange(URL, desc(n)) %>%
+  group_by(URL) %>%
+  top_n(5) %>%
+  group_by(URL) %>%
+  summarize(word = paste0(word, collapse = ", ")) %>%
+  left_join(Papers110)
+
+publishedpaperstop5
+```
+
+```{r, eval = FALSE}
+write_csv(publishedpaperstop5, "PublishedPapersAbstracts.csv")
+```
+
+# Felix Products
+
+Cleaning of Orderlist data for Felix products, code not included in the actual html file.
+```{r, include = FALSE}
+monthslists <- excel_sheets("Orderlist 2023 081723.xlsm")
+
+outs <- monthslists[grepl("out", tolower(monthslists))]
+ins <- monthslists[grepl("in", tolower(monthslists))]
+
+outdatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[1],
+                       skip = 1, col_types = "text")
+
+for(i in seq(1:(length(outs)))) {
+  
+  outdataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[i],
+                           col_types = "text", skip = 1)
+  
+  outdatasets <- bind_rows(outdatasets, outdataset)
+
+}
+
+outdatasets <- outdatasets %>%
+        mutate(`Accessories/Details` = ifelse(is.na(`Accessories/Details`), `PRODUCTS DESCRIPTION`, `Accessories/Details`),
+               `Accessories/Details` = ifelse(is.na(`Accessories/Details`), PRODUCTS, `Accessories/Details`),
+               `SO#` = ifelse(is.na(`SO#`), `INV / SO #`, `SO#`),
+               `SO#` = ifelse(is.na(`SO#`), `SO #`, `SO#`)) %>%
+        select(`Accessories/Details`, everything())
+
+outshipping <- filter(outdatasets[, 1:18], !is.na(Source) | !is.na(`SO#`))
+outshipping <- filter(outshipping, !(Source %in% c("REPAIR", "Repair", "repair")))
+outshipping <- filter(outshipping, !startsWith(`SO#`, "RMA"))
+
+outslower <- data.frame(apply(outshipping, 2, tolower))
+
+commissionflag <- apply(outslower, 1, function(row){
+  any(grepl("commission", row))
+})
+refundflag <- apply(outslower, 1, function(row){
+  any(grepl("refund", row))
+})
+
+outshipping <- outshipping[!(refundflag | commissionflag), ]
+
+# Multiple columns where the product could come from
+productlist <- outshipping$`Accessories/Details`
+productlist2 <- outshipping$PRODUCTS
+
+# The RegEx "\\d{3}" matches the first three consecutive numbers of each string in productlist
+productids <- str_match(productlist, "\\d{3}")
+productids2 <- str_match(productlist2, "\\d{3}")
+
+# Binding the column to the ordersdates dataset, using the Product column if there was no match in productdetails column.
+outshipping <- outshipping %>% 
+  mutate(outshipping, product_IDs = ifelse(is.na(productids), productids2, productids)) %>%
+  select(product_IDs, everything())
+
+# Converting to a data.frame vector rather than a matrix vector (data type thing)
+outshipping$product_IDs <- as.vector(outshipping$product_IDs)
+
+# Numbers that belong to each respective company
+cid <- c(202, 710, 602, 600, 203, 110, 340, 301)
+felix <- c(920, 950, 750, 751, 960, 940, 901, 900)
+interscan <- c(900)
+
+# Creates column of each company corresponding to the number in the product_IDs column
+companycategories <- case_when(
+  outshipping$product_IDs %in% cid ~ "CID",
+  tolower(outshipping$Source) == "interscan" ~ "Interscan",
+  outshipping$product_IDs %in% felix ~ "Felix"
+)
+
+# Now, binding this column together with the orders dataset
+outshipping <- outshipping %>%
+  mutate(Company = companycategories) %>%
+  select(Company, everything())
+```
+
+```{r}
+felixproducts <- filter(outshipping, Company == "Felix") %>%
+  mutate(PRODUCTS = ifelse(is.na(PRODUCTS), "-", PRODUCTS))
+felixproducts <- filter(felixproducts, !startsWith(PRODUCTS, "I-9"))
+```
+
+```{r, eval = FALSE}
+write_csv(felixproducts, "OrderlistFelixProducts2011to2023.csv")
+```
+
+# Sensor Express
+
+```{r}
+InterscanAllocation <- read_excel("Interscan Sensor Orderlist 2023 0808.xlsx", sheet = "Allocation")
+SensorExpress <- filter(InterscanAllocation, `S/E?` == "Y")
+```
+
+```{r}
+SensorExpress$Quantity <- str_extract(SensorExpress$qty, "\\d")
+SensorExpress$Quantity <- ifelse(grepl("[a-zA-Z]", SensorExpress$qty), SensorExpress$Quantity, SensorExpress$qty)
+```
+
+```{r}
+SEUnnested <- unnest_tokens(SensorExpress,
+                            partnumber,
+                            `Part Number`,
+                            token = "regex",
+                            pattern = "\n")
+```
+
+```{r, message = FALSE}
+SEUnnested <- SEUnnested %>%
+  group_by(`Interscan/ SO #`) %>%
+  summarize(n = n(), Quantity = as.numeric(Quantity) / n, partnumber = partnumber, Date = Date)
+```
+
+```{r, eval = FALSE}
+write_csv(SEUnnested, "SensorExpress.csv")
+```
+

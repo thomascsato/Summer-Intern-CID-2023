@@ -1,0 +1,230 @@
+---
+title: "Acquisition Metrics"
+author: "Thomas Sato"
+date: "5 July 2023 - 17 August 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Import packages
+```{r, message = FALSE}
+library(tidyverse)
+library(tidytext)
+library(readxl)
+library(lubridate)
+library(zoo)
+```
+
+# Data Import and Cleaning
+
+This chunk of code is for the sake of having the modified Orderlist for analysis when knitting the html file.  This code chunk will not actually appear in the file, but it is here in the .Rmd file.
+
+```{r, message = FALSE, warning = FALSE, include = FALSE}
+monthslists <- excel_sheets("Orderlist 2023 081723.xlsm")
+
+outs <- monthslists[grepl("out", tolower(monthslists))]
+ins <- monthslists[grepl("in", tolower(monthslists))]
+
+outdatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[1],
+                       skip = 1, col_types = "text")
+
+for(i in seq(1:(length(outs)))) {
+  
+  outdataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[i],
+                           col_types = "text", skip = 1)
+  
+  outdatasets <- bind_rows(outdatasets, outdataset)
+
+}
+
+outdatasets <- outdatasets %>%
+        mutate(`Accessories/Details` = ifelse(is.na(`Accessories/Details`), `PRODUCTS DESCRIPTION`, `Accessories/Details`),
+               `Accessories/Details` = ifelse(is.na(`Accessories/Details`), PRODUCTS, `Accessories/Details`),
+               `SO#` = ifelse(is.na(`SO#`), `INV / SO #`, `SO#`),
+               `SO#` = ifelse(is.na(`SO#`), `SO #`, `SO#`)) %>%
+        select(`Accessories/Details`, everything())
+
+indatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = ins[1], col_types = "text")
+colnames(indatasets)[1] = "Source"
+
+for(i in seq(1:(length(ins)-1))) {
+  
+  indataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = ins[i+1],
+                          col_types = "text")
+
+  colnames(indataset)[1] <- "Source"
+  
+  indatasets <- bind_rows(indatasets, indataset)
+  
+}
+
+outshipping <- filter(outdatasets[, 1:18], !is.na(Source) | !is.na(`SO#`))
+outshipping <- filter(outshipping, !(Source %in% c("REPAIR", "Repair", "repair")))
+outshipping <- filter(outshipping, !startsWith(`SO#`, "RMA"))
+inorders <- filter(indatasets[, 1:11], !is.na(Source) | !(Source %in% c("REPAIR", "Repair", "repair")))
+inorders <- filter(inorders, !startsWith(SO, "RMA"))
+
+orders <- left_join(outshipping, inorders, by = c(`SO#` = "SO"))
+orders <- orders[!duplicated(orders), ]
+
+orderslower <- data.frame(apply(orders, 2, tolower))
+
+commissionflag <- apply(orderslower, 1, function(row){
+  any(grepl("commission", row))
+})
+refundflag <- apply(orderslower, 1, function(row){
+  any(grepl("refund", row))
+})
+
+orders <- orders[!(refundflag | commissionflag), ]
+
+ordersgrouped <- orders %>%
+  distinct(`SO#`, NET, .keep_all = TRUE)
+
+ordersgrouped <- mutate(ordersgrouped, productdetails = `Accessories/Details`)
+
+ordersgrouped$Ordered <- as_date(as.numeric(ordersgrouped$Ordered) - 25569)
+
+ordersdates <- filter(ordersgrouped, !is.na(Ordered))
+ordersdates <- filter(ordersdates, !(`SO#` == "16147" | `SO#` == "16148"))
+ordersdates <- filter(ordersdates, Ordered > "2000-01-01")
+ordersdates$Ordered <- as_date(as.numeric(ordersdates$Ordered))
+
+productlist <- ordersdates$productdetails
+productlist2 <- ordersdates$Product
+
+productids <- str_match(productlist, "\\d{3}")
+productids2 <- str_match(productlist2, "\\d{3}")
+
+ordersdates <- ordersdates %>% 
+  mutate(ordersdates, product_IDs = ifelse(is.na(productids), productids2, productids)) %>%
+  select(product_IDs, everything())
+
+ordersdates$product_IDs <- as.vector(ordersdates$product_IDs)
+
+cid <- c(202, 710, 602, 600, 203, 110, 340, 301)
+felix <- c(920, 950, 750, 751, 960, 940, 901, 900)
+interscan <- c(900)
+
+companycategories <- case_when(
+  ordersdates$product_IDs %in% cid ~ "CID",
+  tolower(ordersdates$Source.x) == "interscan" ~ "Interscan",
+  tolower(ordersdates$Source.y) == "interscan" ~ "Interscan",
+  ordersdates$product_IDs %in% felix ~ "Felix"
+)
+
+ordersdates <- ordersdates %>%
+  mutate(Company = companycategories) %>%
+  mutate(YD = as.yearmon(Ordered), Year = year(Ordered)) %>%
+  select(YD, everything()) %>%
+  filter(YD != "Jan 2015") %>%
+  mutate(wday = wday(Ordered, label = T, abbr = F)) %>%
+  select(Company, wday, everything())
+
+SupportCases <- read_excel("All Support Cases 6-2-2023 Support Project.xlsx")
+
+productdf <- tibble(unique(SupportCases$Product))
+productdf <- productdf %>%
+  mutate(num = str_match(`unique(SupportCases$Product)`, "\\d{3}"))
+productdf <- productdf[-c(19, 21, 29, 30, 1, 22, 32, 23, 33), ]
+productdf[6, 2] <- "751 Avocado"
+productdf[20, 2] <- "751 Melon"
+productdf[11, 2] <- "751 Kiwi"
+productdf[19, 2] <- "751 Mango"
+productdf[21, 2] <- "901B"
+productdf[22, 2] <- "901R"
+productdf[23, 2] <- "901D"
+productdf[7, 2] <- "901S"
+colnames(productdf)[1] <- "Product"
+productdf$num <- as.vector(productdf$num)
+
+productids4 <- case_when(
+  grepl("avo", tolower(ordersdates$Product)) ~ "751 Avocado",
+  grepl("man", tolower(ordersdates$Product)) ~ "751 Mango",
+  grepl("kiwi", tolower(ordersdates$Product)) ~ "751 Kiwi",
+  grepl("901B", ordersdates$Product) ~ "901B",
+  grepl("901R", ordersdates$Product) ~ "901R",
+  grepl("901D", ordersdates$Product) ~ "901D",
+)
+
+productids3 <- case_when(
+  grepl("avo", tolower(ordersdates$PRODUCTS)) ~ "751 Avocado",
+  grepl("man", tolower(ordersdates$PRODUCTS)) ~ "751 Mango",
+  grepl("kiwi", tolower(ordersdates$PRODUCTS)) ~ "751 Kiwi",
+  grepl("901B", ordersdates$PRODUCTS) ~ "901B",
+  grepl("901R", ordersdates$PRODUCTS) ~ "901R",
+  grepl("901D", ordersdates$PRODUCTS) ~ "901D",
+)
+
+ordersdates$product_IDs <- ifelse(!is.na(productids4), productids4, ordersdates$product_IDs)
+ordersdates$product_IDs <- ifelse(!is.na(productids3), productids3, ordersdates$product_IDs)
+
+ordersdates <- ordersdates %>%
+  left_join(productdf, by = c("product_IDs" = "num")) %>%
+  mutate(`END USER` = ifelse(`END USER` == "same", `CUSTOMER'S NAME`, `END USER`)) %>%
+  mutate(customer = tolower(ifelse(is.na(`END USER`), `CUSTOMER'S NAME`, `END USER`))) %>%
+  select(Product.y, everything()) %>%
+  arrange(Ordered)
+```
+
+
+# 2. Lead Source
+
+Manually changing the sources to narrow down the categorization of Orderlist
+```{r}
+sources <- unique(ordersdates$Source.x)
+
+sourcecategories <- c("PC", "Distributor", "Reseller", "Web", "Reseller", "Distributor", "Evaluation", "Reseller", "Trade Show", "Trade Show", "Reseller", "Consult", "Email", "Web", "PC", "Consult", "Reseller", "Web", "Distributor", "Trade Show", "Email", "Consult", "Rental", "Phone", "?", "Trade Show", "Consult", "Distributor", "Web", "Service", "Loaner", "Google", "PC", "Trade Show", "Trade In", "?", "Trade Show", "Trade Show", "Trade Show", "Trade Show", "Trade Show", "Trade Show", "Evaluation", "Referral", "Phone", "?", "Trade Show", "Webinar", "Consult", "Evaluation", "Referral", "Trade Show", "Visit", "Trade Show", "Trade Show", "Trade Show", "Trade Show", "Promotion", "Trade Show", "Trade In", "Trade In", "?", "?", "Trade Show", "?", "Trade Show", "Trade Show", "?", "?", "Trade Show", "Trade Show", "Trade Show", "Trade Show", "Ad", "Trade Show", "Email", "Reseller", "Email", "Trade Show", "Trade Show", "Trade Show", "Trade Show", "Trade Show", "Promotion", "Trade Show", "Trade Show", "?", "Trade Show", "Trade Show", "Trade Show", "Web", "Trade Show", "?", "Service", "Trade Show", "Trade Show", "Trade Show", "Referral", "Trade Show", "Trade Show")
+
+sources <- as_tibble(cbind(sources, sourcecategories))
+
+```
+
+Creating a column in that has the consolidated category, which I think is enough to import into Power BI.
+```{r}
+ordersdates <- ordersdates %>%
+  mutate(SourceCategory = left_join(ordersdates, sources, by = c("Source.x" = "sources"))$sourcecategories) %>%
+  select(SourceCategory, everything())
+```
+
+Needing to do more modifications to the Orderlist such that I can do more things in Power BI
+```{r}
+ordersdates <- ordersdates %>%
+  mutate(customer = tolower(ifelse(is.na(`END USER`), `CUSTOMER'S NAME`, `END USER`)))
+```
+
+
+```{r, eval = FALSE}
+write_csv(ordersdates, "ShippedOrders.csv")
+```
+
+# Lead Source From All Leads
+
+Not necessary anymore, all done in Power BI
+
+```{r}
+AllLeads <- read_excel("All Leads 7-13-2023 2-11-54 PM.xlsx")
+```
+
+```{r}
+AllLeadsUnnest <- AllLeads %>%
+  unnest_tokens(product,
+                `Products (Qualifying Opportunity) (Opportunity)`,
+                token = "regex",
+                pattern = ", ") %>%
+  mutate(Company = ifelse(startsWith(product, "f-"), "Felix", NA),
+         Company = ifelse(startsWith(product, "ci-"), "CID", Company),
+         Company = ifelse(!is.na(product) & is.na(Company), "Interscan", Company)) %>%
+  select(product, Company, everything())
+```
+
+```{r, eval = FALSE}
+write_csv(AllLeadsUnnest, "AllLeads.csv")
+```
+
+
+
+

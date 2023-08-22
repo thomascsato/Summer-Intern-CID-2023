@@ -1,0 +1,359 @@
+---
+title: "Revenue Metrics"
+author: "Thomas Sato"
+date: "16 June 2023 - 17 August 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Import Packages
+```{r, message = FALSE}
+library(tidyverse)
+library(tidytext)
+library(readxl)
+library(lubridate)
+library(zoo)
+```
+
+# Data Import and Cleaning
+
+This chunk of code is for the sake of having the modified Orderlist for analysis when knitting the html file.  This code chunk will not actually appear in the file, but it is here in the .Rmd file.
+
+```{r, message = FALSE, warning = FALSE, include = FALSE}
+monthslists <- excel_sheets("Orderlist 2023 081723.xlsm")
+
+outs <- monthslists[grepl("out", tolower(monthslists))]
+ins <- monthslists[grepl("in", tolower(monthslists))]
+
+outdatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[1],
+                       skip = 1, col_types = "text")
+
+for(i in seq(1:(length(outs)))) {
+  
+  outdataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = outs[i],
+                           col_types = "text", skip = 1)
+  
+  outdatasets <- bind_rows(outdatasets, outdataset)
+
+}
+
+outdatasets <- outdatasets %>%
+        mutate(`Accessories/Details` = ifelse(is.na(`Accessories/Details`), `PRODUCTS DESCRIPTION`, `Accessories/Details`),
+               `Accessories/Details` = ifelse(is.na(`Accessories/Details`), PRODUCTS, `Accessories/Details`),
+               `SO#` = ifelse(is.na(`SO#`), `INV / SO #`, `SO#`),
+               `SO#` = ifelse(is.na(`SO#`), `SO #`, `SO#`)) %>%
+        select(`Accessories/Details`, everything())
+
+indatasets <- read_excel("Orderlist 2023 081723.xlsm", sheet = ins[1], col_types = "text")
+colnames(indatasets)[1] = "Source"
+
+for(i in seq(1:(length(ins)-1))) {
+  
+  indataset <- read_excel("Orderlist 2023 081723.xlsm", sheet = ins[i+1],
+                          col_types = "text")
+
+  colnames(indataset)[1] <- "Source"
+  
+  indatasets <- bind_rows(indatasets, indataset)
+  
+}
+
+outshipping <- filter(outdatasets[, 1:18], !is.na(Source) | !is.na(`SO#`))
+outshipping <- filter(outshipping, !(Source %in% c("REPAIR", "Repair", "repair")))
+outshipping <- filter(outshipping, !startsWith(`SO#`, "RMA"))
+inorders <- filter(indatasets[, 1:11], !is.na(Source) | !(Source %in% c("REPAIR", "Repair", "repair")))
+inorders <- filter(inorders, !startsWith(SO, "RMA"))
+
+orders <- left_join(outshipping, inorders, by = c(`SO#` = "SO"))
+orders <- orders[!duplicated(orders), ]
+
+orderslower <- data.frame(apply(orders, 2, tolower))
+
+commissionflag <- apply(orderslower, 1, function(row){
+  any(grepl("commission", row))
+})
+refundflag <- apply(orderslower, 1, function(row){
+  any(grepl("refund", row))
+})
+
+orders <- orders[!(refundflag | commissionflag), ]
+
+ordersgrouped <- orders %>%
+  distinct(`SO#`, NET, .keep_all = TRUE)
+
+ordersgrouped <- mutate(ordersgrouped, productdetails = `Accessories/Details`)
+
+ordersgrouped$Ordered <- as_date(as.numeric(ordersgrouped$Ordered) - 25569)
+
+ordersdates <- filter(ordersgrouped, !is.na(Ordered))
+ordersdates <- filter(ordersdates, !(`SO#` == "16147" | `SO#` == "16148"))
+ordersdates <- filter(ordersdates, Ordered > "2000-01-01")
+ordersdates$Ordered <- as_date(as.numeric(ordersdates$Ordered))
+
+productlist <- ordersdates$productdetails
+productlist2 <- ordersdates$Product
+
+productids <- str_match(productlist, "\\d{3}")
+productids2 <- str_match(productlist2, "\\d{3}")
+
+ordersdates <- ordersdates %>% 
+  mutate(ordersdates, product_IDs = ifelse(is.na(productids), productids2, productids)) %>%
+  select(product_IDs, everything())
+
+ordersdates$product_IDs <- as.vector(ordersdates$product_IDs)
+
+cid <- c(202, 710, 602, 600, 203, 110, 340, 301)
+felix <- c(920, 950, 750, 751, 960, 940, 901, 900)
+interscan <- c(900)
+
+companycategories <- case_when(
+  ordersdates$product_IDs %in% cid ~ "CID",
+  tolower(ordersdates$Source.x) == "interscan" ~ "Interscan",
+  tolower(ordersdates$Source.y) == "interscan" ~ "Interscan",
+  ordersdates$product_IDs %in% felix ~ "Felix"
+)
+
+ordersdates <- ordersdates %>%
+  mutate(Company = companycategories) %>%
+  mutate(YD = as.yearmon(Ordered), Year = year(Ordered)) %>%
+  select(YD, everything()) %>%
+  filter(YD != "Jan 2015") %>%
+  mutate(wday = wday(Ordered, label = T, abbr = F)) %>%
+  select(Company, wday, everything())
+
+SupportCases <- read_excel("All Support Cases 6-2-2023 Support Project.xlsx")
+
+productdf <- tibble(unique(SupportCases$Product))
+productdf <- productdf %>%
+  mutate(num = str_match(`unique(SupportCases$Product)`, "\\d{3}"))
+productdf <- productdf[-c(19, 21, 29, 30, 1, 22, 32, 23, 33), ]
+productdf[6, 2] <- "751 Avocado"
+productdf[20, 2] <- "751 Melon"
+productdf[11, 2] <- "751 Kiwi"
+productdf[19, 2] <- "751 Mango"
+productdf[21, 2] <- "901B"
+productdf[22, 2] <- "901R"
+productdf[23, 2] <- "901D"
+productdf[7, 2] <- "901S"
+colnames(productdf)[1] <- "Product"
+productdf$num <- as.vector(productdf$num)
+
+productids4 <- case_when(
+  grepl("avo", tolower(ordersdates$Product)) ~ "751 Avocado",
+  grepl("man", tolower(ordersdates$Product)) ~ "751 Mango",
+  grepl("kiwi", tolower(ordersdates$Product)) ~ "751 Kiwi",
+  grepl("901B", ordersdates$Product) ~ "901B",
+  grepl("901R", ordersdates$Product) ~ "901R",
+  grepl("901D", ordersdates$Product) ~ "901D",
+)
+
+productids3 <- case_when(
+  grepl("avo", tolower(ordersdates$PRODUCTS)) ~ "751 Avocado",
+  grepl("man", tolower(ordersdates$PRODUCTS)) ~ "751 Mango",
+  grepl("kiwi", tolower(ordersdates$PRODUCTS)) ~ "751 Kiwi",
+  grepl("901B", ordersdates$PRODUCTS) ~ "901B",
+  grepl("901R", ordersdates$PRODUCTS) ~ "901R",
+  grepl("901D", ordersdates$PRODUCTS) ~ "901D",
+)
+
+ordersdates$product_IDs <- ifelse(!is.na(productids4), productids4, ordersdates$product_IDs)
+ordersdates$product_IDs <- ifelse(!is.na(productids3), productids3, ordersdates$product_IDs)
+
+ordersdates <- ordersdates %>%
+  left_join(productdf, by = c("product_IDs" = "num")) %>%
+  mutate(`END USER` = ifelse(`END USER` == "same", `CUSTOMER'S NAME`, `END USER`)) %>%
+  mutate(customer = tolower(ifelse(is.na(`END USER`), `CUSTOMER'S NAME`, `END USER`))) %>%
+  select(Product.y, everything()) %>%
+  arrange(Ordered)
+```
+
+```{r, message = FALSE, warning = FALSE}
+ordersdates <- ordersdates %>%
+  mutate(NET = as.numeric(NET)) %>%
+  select(Product.y, Company, `CUSTOMER'S NAME`, QTY, NET, Ordered, YD, `SO#`, Year)
+```
+
+# 7:  Average Revenue Per Account (ARPA)
+
+```{r}
+colors <- c("CID" = "red", "Felix" = "green", "Interscan" = "blue")
+
+ARPA <- function(company, year) {
+  
+  ds <- ordersdates %>%
+    filter(Company %in% company, Year == year)
+  
+  ds <- ds %>%
+    group_by(YD) %>%
+    summarize(n = length(unique(`CUSTOMER'S NAME`)),
+              revenue = sum(NET, na.rm = TRUE),
+              arpa = revenue / n)
+  
+  arpaplot <- ggplot(ds, aes(as_date(YD), arpa)) +
+    geom_col(fill = colors[company], color = "black") +
+    theme_light() +
+    scale_x_date(breaks = seq.Date(as_date(paste(year, "-01-01")), as_date(paste(year, "-12-01")), by = "month"), date_labels = "%b") +
+    labs(x = "Month", y = "ARPA", title = paste("Monthly ARPA for", company, "in", as.character(year)))
+  
+  arpaoverall <- mean(ds$arpa)
+  
+  return(list(arpaoverall, arpaplot))
+  
+}
+```
+
+```{r}
+ARPA("Felix", 2016)[[1]]
+ARPA("Felix", 2017)[[2]]
+ARPA("CID", 2023)[[1]]
+ARPA("CID", 2023)[[2]]
+```
+
+Saving graphs
+```{r, eval = FALSE}
+for(company in c("CID", "Felix")) {
+  for(year in 2011:2023) {
+    ggsave(filename = paste("ARPA", company, as.character(year), ".png", sep = ""),
+         plot = ARPA(company, year)[[2]],
+         path = paste(getwd(), "\\Customer Journey Visualizations\\ARPA", sep = ""),
+         width = 9,
+         height = 5)
+  }
+}
+
+ggsave(filename = "ARPAInterscan2023.png",
+       plot = ARPA("Interscan", 2023)[[2]],
+       path = paste(getwd(), "\\Customer Journey Visualizations\\ARPA", sep = ""),
+       width = 9,
+       height = 5)
+```
+
+
+
+
+# 8:  Customer Lifetime Value (CLT/LTV)
+
+```{r, message = FALSE, eval = FALSE}
+CLT <- function(company) {
+  suppressMessages({
+  
+    CLTdataset <- ordersdates %>%
+      group_by(`CUSTOMER'S NAME`, Company, `SO#`) %>%
+      summarize(Ordered = mean(Ordered)) %>%
+      group_by(`CUSTOMER'S NAME`, Company) %>%
+      summarize(timedifference = max(Ordered) - min(Ordered))
+    
+    CLTdataset <- CLTdataset %>%
+      filter(Company == company)
+    
+    CLT <- mean(filter(CLTdataset, timedifference > 0)$timedifference)
+    CLT <- as.numeric(CLT * ARPA(company)[[1]])
+    
+    return(paste("Customer Lifetime Value: ", as.character(CLT)))
+  
+  })
+}
+```
+There were 330 customers that ordered more than once across all three companies
+
+```{r, eval = FALSE}
+CLT("CID")
+CLT("Felix")
+CLT("Interscan")
+```
+
+
+# 9:  Average Contract Value (ACV)
+
+```{r}
+ACV <- function(company, year) {
+  
+  ds <- ordersdates %>%
+    filter(Company %in% company, Year == year)
+  
+  ds <- ds %>%
+    group_by(YD) %>%
+    summarize(sumrevenue = sum(NET, na.rm = TRUE), n = n(), acv = sumrevenue / n)
+  
+  ACVplot <- ggplot(ds, aes(as_date(YD), acv)) +
+    geom_col(fill = colors[company], color = "black") +
+    theme_light() +
+    scale_x_date(breaks = seq.Date(as_date(paste(year, "-01-01")), as_date(paste(year, "-12-01")), by = "month"), date_labels = "%b") +
+    labs(x = "Month", y = "ACV", title = paste("Monthly ACV for", company, "in", as.character(year)))
+  
+  ACVoverall <- mean(ds$sumrevenue, na.rm = TRUE) / nrow(ds)
+  
+  return(list(ACVoverall, ACVplot))
+  
+}
+```
+
+```{r}
+ACV("CID", 2018)[[1]]
+ACV("CID", 2018)[[2]]
+ACV("Felix", 2018)[[1]]
+ACV("Felix", 2018)[[2]]
+```
+
+Saving graphs
+```{r, eval = FALSE}
+for(company in c("CID", "Felix")) {
+  for(year in 2011:2023) {
+    ggsave(filename = paste("ACV", company, as.character(year), ".png", sep = ""),
+         plot = ACV(company, year)[[2]],
+         path = paste(getwd(), "\\Customer Journey Visualizations\\ACV", sep = ""),
+         width = 9,
+         height = 5)
+  }
+}
+
+ggsave(filename = "ACVInterscan2023.png",
+       plot = ARPA("Interscan", 2023)[[2]],
+       path = paste(getwd(), "\\Customer Journey Visualizations\\ACV", sep = ""),
+       width = 9,
+       height = 5)
+```
+
+# Revenue Checking
+
+Power BI visual tells us that there was a CID revenue of 570,871 in December of 2014, which does not sound correct.
+```{r, eval = FALSE}
+View(filter(ordersdates, YD == "Oct 2015" & Company == "CID"))
+```
+
+There are no discernible outlying values I don't think, so I am not sure what the deal is.
+
+```{r, eval = FALSE}
+write_csv(filter(ordersdates, YD == "Dec 2014" & Company == "CID"), "December2014CIDOrderlist.csv")
+```
+
+Apparently it was just a very good month
+
+# Zeal Out Orders
+
+```{r}
+zeal <- function(sheet) {
+  
+  zealsheet <- read_excel("Orderlist 2023 081723.xlsm", sheet = sheet, skip = 1)
+  
+  zealsheet$`CUSTOMER'S NAME` <- tolower(zealsheet$`CUSTOMER'S NAME`)
+  print(unique(zealsheet$`CUSTOMER'S NAME`))
+  
+  zealout <- filter(zealsheet, `CUSTOMER'S NAME` == "zeal")
+  
+  zealout$NET = as.numeric(zealout$NET)
+  
+  zealrevenue <- sum(zealout$NET, na.rm = T)
+  
+  return(zealrevenue)
+  
+}
+```
+
+```{r}
+zeal("July 23 Out")
+```
+
