@@ -1,0 +1,558 @@
+Acquisition Rate Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Customer Journey Dashboard\All Opportunities 6-22-2023 12-33-39 PM.xlsx"), null, true),
+    InterscanIndicators = {"sensor", "gasd", "halimeter"},
+    #"All Opportunities_Sheet" = Source{[Item="All Opportunities",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"All Opportunities_Sheet", [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"(Do Not Modify) Opportunity", type text}, {"(Do Not Modify) Row Checksum", type text}, {"(Do Not Modify) Modified On", type datetime}, {"Status", type text}, {"Actual Revenue", type number}, {"Est. Revenue", Int64.Type}, {"Created On", type datetime}, {"Products", type text}, {"Sales Order", Int64.Type}, {"Source Campaign", type text}}),
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type", {{"Actual Revenue", 0}}),
+    #"Filtered Rows" = Table.SelectRows(#"Replaced Errors", each ([Status] <> "Open")),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Filtered Rows",{{"Est. Revenue", type number}}),
+    #"Replaced Errors1" = Table.ReplaceErrorValues(#"Changed Type1", {{"Est. Revenue", 0}}),
+    #"Added Custom" = Table.AddColumn(#"Replaced Errors1", "MonthYear", each Text.Combine({Text.From(Date.Month([Created On])), Text.From(Date.Year([Created On]))}, " ")),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Custom",{{"MonthYear", type date}}),
+    #"Removed Errors" = Table.RemoveRowsWithErrors(#"Changed Type2", {"MonthYear"}),
+    #"Added Conditional Column" = Table.AddColumn(#"Removed Errors", "Company", each if Text.StartsWith([Products], "CI") then "CID" else "Felix"),
+    #"Filtered Rows1" = Table.SelectRows(#"Added Conditional Column", each [Products] <> null and [Products] <> ""),
+    #"Added Column" = Table.AddColumn(#"Filtered Rows1", "CompanyTemp", each List.Sum(List.Transform(InterscanIndicators, (expr) => if Text.Contains(Text.Lower([Products]), expr) then 1 else 0))),
+    #"Added Column2" = Table.AddColumn(#"Added Column", "Company2", each if [CompanyTemp] > 0 then "Interscan" else [Company], type text),
+    #"Removed Columns2" = Table.RemoveColumns(#"Added Column2", "CompanyTemp"),
+    #"Removed Columns1" = Table.RemoveColumns(#"Removed Columns2",{"Company"}),
+    #"Renamed Columns" = Table.RenameColumns(#"Removed Columns1",{{"Company2", "Company"}}),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Renamed Columns",{{"Company", type text}}),
+    #"Grouped Rows" = Table.Group(#"Changed Type3", {"MonthYear", "Company", "Status"}, {{"Count", each Table.RowCount(_), Int64.Type}}),
+    #"Pivoted Column" = Table.Pivot(#"Grouped Rows", List.Distinct(#"Grouped Rows"[Status]), "Status", "Count", List.Sum),
+    #"Replaced Value" = Table.ReplaceValue(#"Pivoted Column",null,0,Replacer.ReplaceValue,{"Lost"}),
+    #"Filtered Rows3" = Table.SelectRows(#"Replaced Value", each ([MonthYear] <> #date(2018, 9, 1)))
+in
+    #"Filtered Rows3"
+
+Lead Source (Opportunities) Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Customer Journey Dashboard\All Opportunities 6-22-2023 12-33-39 PM.xlsx"), null, true),
+    InterscanIndicators = {"sensor", "gasd", "halimeter"},
+    #"All Opportunities_Sheet" = Source{[Item="All Opportunities",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"All Opportunities_Sheet", [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"(Do Not Modify) Opportunity", type text}, {"(Do Not Modify) Row Checksum", type text}, {"(Do Not Modify) Modified On", type datetime}, {"Status", type text}, {"Actual Revenue", type number}, {"Est. Revenue", Int64.Type}, {"Created On", type datetime}, {"Products", type text}, {"Sales Order", Int64.Type}, {"Source Campaign", type text}}),
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type", {{"Actual Revenue", 0}}),
+    #"Filtered Rows" = Table.SelectRows(#"Replaced Errors", each ([Status] <> "Open")),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Filtered Rows",{{"Est. Revenue", type number}}),
+    #"Replaced Errors1" = Table.ReplaceErrorValues(#"Changed Type1", {{"Est. Revenue", 0}}),
+    #"Added Custom" = Table.AddColumn(#"Replaced Errors1", "MonthYear", each Text.Combine({Text.From(Date.Month([Created On])), Text.From(Date.Year([Created On]))}, " ")),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Custom",{{"MonthYear", type date}}),
+    #"Removed Errors" = Table.RemoveRowsWithErrors(#"Changed Type2", {"MonthYear"}),
+    #"Added Conditional Column" = Table.AddColumn(#"Removed Errors", "Company", each if Text.StartsWith([Products], "CI") then "CID" else "Felix"),
+    #"Filtered Rows1" = Table.SelectRows(#"Added Conditional Column", each [Products] <> null and [Products] <> ""),
+    #"Added Column" = Table.AddColumn(#"Filtered Rows1", "CompanyTemp", each List.Sum(List.Transform(InterscanIndicators, (expr) => if Text.Contains(Text.Lower([Products]), expr) then 1 else 0))),
+    #"Added Column2" = Table.AddColumn(#"Added Column", "Company2", each if [CompanyTemp] > 0 then "Interscan" else [Company], type text),
+    #"Removed Columns2" = Table.RemoveColumns(#"Added Column2", "CompanyTemp"),
+    #"Removed Columns1" = Table.RemoveColumns(#"Removed Columns2",{"Company"}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Removed Columns1",{{"Company2", "Company"}}),
+    #"Grouped Rows1" = Table.Group(#"Renamed Columns1", {"Company", "Source Campaign", "MonthYear"}, {{"Count", each Table.RowCount(_), Int64.Type}}),
+    #"Filtered Rows2" = Table.SelectRows(#"Grouped Rows1", each ([Source Campaign] <> "NA") and ([Company] <> "NA")),
+    #"Renamed Columns" = Table.RenameColumns(#"Filtered Rows2",{{"Count", "Closed Won Opportunities"}}),
+    #"Filtered Rows3" = Table.SelectRows(#"Renamed Columns", each ([Source Campaign] <> null))
+in
+    #"Filtered Rows3"
+
+Orderlist Revenue Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=36, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type1", each true),
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Custom1",{{"MonthYear", type date}})
+in
+    #"Changed Type3"
+
+Orderlist Unit Sales Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=36, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type1", each true),
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Custom1",{{"MonthYear", type date}}),
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type3", {{"ACTUAL SHIPPING", 0}}),
+    #"Replaced Errors1" = Table.ReplaceErrorValues(#"Replaced Errors", {{"INVOICE $", 0}}),
+    #"Replaced Errors2" = Table.ReplaceErrorValues(#"Replaced Errors1", {{"NET", 0}}),
+    #"Replaced Errors3" = Table.ReplaceErrorValues(#"Replaced Errors2", {{"Amount", 0}}),
+    #"Replaced Errors4" = Table.ReplaceErrorValues(#"Replaced Errors3", {{"Cumulative", 0}}),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Replaced Errors4",{{"MonthYear", type text}}),
+    #"Run R script" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidytext)#(lf)orders <- unnest_tokens(dataset, productdetails2, `Accessories/Details`, token = ""regex"", pattern = ""\\n"")",[dataset=#"Changed Type2"]),
+    #"""orders""" = #"Run R script"{[Name="orders"]}[Value],
+    #"Run R script1" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidytext)#(lf)orders <- unnest_tokens(dataset, productdetails3, productdetails2, token = ""regex"", pattern = ""     "")",[dataset=#"""orders"""]),
+    #"Expanded Value" = #"Run R script1"{[Name="orders"]}[Value],
+    #"Changed Type4" = Table.TransformColumnTypes(#"Expanded Value",{{"MonthYear", type date}})
+in
+    #"Changed Type4"
+
+ARPA (Monthly) Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=37, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Removed Errors" = Table.RemoveRowsWithErrors(#"Changed Type1", {"NET"}),
+    #"Added Custom" = Table.AddColumn(#"Removed Errors", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Added Conditional Column" = Table.AddColumn(#"Added Custom", "Customer", each if [customer] = "same" then [#"CUSTOMER'S NAME"] else [customer]),
+    #"Grouped Rows" = Table.Group(#"Added Conditional Column", {"MonthYear", "Customer", "Company"}, {{"revenue", each List.Sum([NET]), type nullable number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Grouped Rows", each ([Company] <> "NA")),
+    #"Sorted Rows" = Table.Sort(#"Filtered Rows",{{"MonthYear", Order.Descending}}),
+    #"Grouped Rows1" = Table.Group(#"Sorted Rows", {"MonthYear", "Company"}, {{"n", each Table.RowCount(Table.Distinct(_)), Int64.Type}, {"revenue", each List.Sum([revenue]), type nullable number}}),
+    #"Added Custom1" = Table.AddColumn(#"Grouped Rows1", "arpa", each [revenue] / [n]),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Custom1",{{"arpa", type number}, {"MonthYear", type date}}),
+    #"Sorted Rows1" = Table.Sort(#"Changed Type2",{{"MonthYear", Order.Ascending}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Sorted Rows1",{{"revenue", "Revenue"}, {"n", "Unit Sales"}}),
+    #"Added Custom2" = Table.AddColumn(#"Renamed Columns1", "Year", each Date.Year([MonthYear])),
+    #"Renamed Columns2" = Table.RenameColumns(#"Added Custom2",{{"Unit Sales", "Unique Customers"}})
+in
+    #"Renamed Columns2"
+
+ARPA (Yearly) Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=37, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Removed Errors" = Table.RemoveRowsWithErrors(#"Changed Type1", {"NET"}),
+    #"Added Custom" = Table.AddColumn(#"Removed Errors", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Added Conditional Column" = Table.AddColumn(#"Added Custom", "Customer", each if [customer] = "same" then [#"CUSTOMER'S NAME"] else [customer]),
+    #"Grouped Rows" = Table.Group(#"Added Conditional Column", {"Year", "Customer", "Company"}, {{"revenue", each List.Sum([NET]), type nullable number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Grouped Rows", each ([Company] <> "NA")),
+    #"Grouped Rows1" = Table.Group(#"Filtered Rows", {"Year", "Company"}, {{"Count", each Table.RowCount(_), Int64.Type}, {"sumrevenue", each List.Sum([revenue]), type nullable number}})
+in
+    #"Grouped Rows1"
+
+ARPA (Overall) Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=37, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Removed Errors" = Table.RemoveRowsWithErrors(#"Changed Type1", {"NET"}),
+    #"Added Custom" = Table.AddColumn(#"Removed Errors", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Added Conditional Column" = Table.AddColumn(#"Added Custom", "Customer", each if [customer] = "same" then [#"CUSTOMER'S NAME"] else [customer]),
+    #"Grouped Rows" = Table.Group(#"Added Conditional Column", {"Customer", "Company"}, {{"revenue", each List.Sum([NET]), type nullable number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Grouped Rows", each ([Company] <> "NA")),
+    #"Grouped Rows1" = Table.Group(#"Filtered Rows", {"Company"}, {{"Count", each Table.RowCount(_), Int64.Type}, {"revenue", each List.Sum([revenue]), type nullable number}})
+in
+    #"Grouped Rows1"
+
+ACV Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=37, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type1", {{"NET", 0}}),
+    #"Added Custom" = Table.AddColumn(#"Replaced Errors", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Grouped Rows" = Table.Group(#"Added Custom", {"MonthYear", "Company"}, {{"revenue", each List.Sum([NET]), type nullable number}, {"n", each Table.RowCount(_), Int64.Type}}),
+    #"Filtered Rows" = Table.SelectRows(#"Grouped Rows", each ([Company] <> "NA")),
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows", "acv", each [revenue] / [n]),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Custom1",{{"MonthYear", type date}, {"acv", type number}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type2",{{"n", "numcontracts"}})
+in
+    #"Renamed Columns1"
+
+CLV Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=36, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type1", each true),
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Added Conditional Column" = Table.AddColumn(#"Added Custom1", "Customer1", each if [customer] = "same" then [#"CUSTOMER'S NAME"] else [customer]),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Conditional Column",{{"MonthYear", type date}}),
+    #"Grouped Rows" = Table.Group(#"Changed Type3", {"Customer1", "Company"}, {{"mindate", each List.Min([Ordered]), type nullable date}, {"maxdate", each List.Max([Ordered]), type nullable date}}),
+    #"Filtered Rows1" = Table.SelectRows(#"Grouped Rows", each ([Company] <> "NA")),
+    #"Added Custom" = Table.AddColumn(#"Filtered Rows1", "CLT", each [maxdate] - [mindate]),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Custom",{{"CLT", type number}}),
+    #"Sorted Rows" = Table.Sort(#"Changed Type2",{{"Customer1", Order.Ascending}})
+in
+    #"Sorted Rows"
+
+Number of Purchases per Year Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=37, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type1", {{"NET", 0}}),
+    #"Added Custom" = Table.AddColumn(#"Replaced Errors", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Grouped Rows" = Table.Group(#"Added Custom", {"MonthYear", "Company"}, {{"revenue", each List.Sum([NET]), type nullable number}, {"n", each Table.RowCount(_), Int64.Type}}),
+    #"Filtered Rows" = Table.SelectRows(#"Grouped Rows", each ([Company] <> "NA")),
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows", "acv", each [revenue] / [n]),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Custom1",{{"MonthYear", type date}, {"acv", type number}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type2",{{"n", "numcontracts"}}),
+    #"Added Custom2" = Table.AddColumn(#"Renamed Columns1", "Year", each Date.Year([MonthYear])),
+    #"Grouped Rows1" = Table.Group(#"Added Custom2", {"Year", "Company"}, {{"Number of Purchases", each List.Sum([numcontracts]), type number}}),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Grouped Rows1",{{"Year", type number}})
+in
+    #"Changed Type3"
+
+Repeat Customers Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=37, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type1", each true),
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Custom1",{{"MonthYear", type date}}),
+    #"Grouped Rows" = Table.Group(#"Changed Type3", {"MonthYear", "pcflag", "Company", "customer"}, {{"Count", each Table.RowCount(_), Int64.Type}}),
+    #"Grouped Rows1" = Table.Group(#"Grouped Rows", {"MonthYear", "pcflag", "Company"}, {{"Count", each Table.RowCount(_), Int64.Type}}),
+    #"Pivoted Column" = Table.Pivot(#"Grouped Rows1", List.Distinct(#"Grouped Rows1"[pcflag]), "pcflag", "Count", List.Sum),
+    #"Replaced Value" = Table.ReplaceValue(#"Pivoted Column",null,0,Replacer.ReplaceValue,{"FALSE", "TRUE"}),
+    #"Added Custom" = Table.AddColumn(#"Replaced Value", "Repeat Customer Ratio", each [TRUE] / ([FALSE] + [TRUE])),
+    #"Filtered Rows1" = Table.SelectRows(#"Added Custom", each ([Company] <> "NA")),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Filtered Rows1",{{"Repeat Customer Ratio", type number}}),
+    #"Added Custom2" = Table.AddColumn(#"Changed Type2", "Total", each [TRUE] + [FALSE]),
+    #"Changed Type4" = Table.TransformColumnTypes(#"Added Custom2",{{"Total", type number}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type4",{{"Repeat Customer Ratio", "RepeatCustomerRatio"}})
+in
+    #"Renamed Columns1"
+
+Felix Products Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=36, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type1", each true),
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Custom1",{{"MonthYear", type date}}),
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type3", {{"ACTUAL SHIPPING", 0}}),
+    #"Replaced Errors1" = Table.ReplaceErrorValues(#"Replaced Errors", {{"INVOICE $", 0}}),
+    #"Replaced Errors2" = Table.ReplaceErrorValues(#"Replaced Errors1", {{"NET", 0}}),
+    #"Replaced Errors3" = Table.ReplaceErrorValues(#"Replaced Errors2", {{"Amount", 0}}),
+    #"Replaced Errors4" = Table.ReplaceErrorValues(#"Replaced Errors3", {{"Cumulative", 0}}),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Replaced Errors4",{{"MonthYear", type text}}),
+    #"Run R script" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidytext)#(lf)orders <- unnest_tokens(dataset, productdetails2, `Accessories/Details`, token = ""regex"", pattern = ""\\n"")",[dataset=#"Changed Type2"]),
+    #"""orders""" = #"Run R script"{[Name="orders"]}[Value],
+    #"Run R script1" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidytext)#(lf)orders <- unnest_tokens(dataset, productdetails3, productdetails2, token = ""regex"", pattern = ""     "")",[dataset=#"""orders"""]),
+    #"Expanded Value" = #"Run R script1"{[Name="orders"]}[Value],
+    #"Changed Type4" = Table.TransformColumnTypes(#"Expanded Value",{{"MonthYear", type date}}),
+    #"Filtered Rows1" = Table.SelectRows(#"Changed Type4", each ([Company] = "Felix")),
+    #"Grouped Rows" = Table.Group(#"Filtered Rows1", {"Product.y", "MonthYear"}, {{"Count", each Table.RowCount(_), Int64.Type}})
+in
+    #"Grouped Rows"
+
+Unit Sales Line Graph Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\ShippedOrders Modified 821.csv"),[Delimiter=",", Columns=36, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Product.y", type text}, {"wday", type text}, {"YD", type date}, {"Company", type text}, {"product_IDs", type text}, {"Source.x", type text}, {"CUSTOMER'S NAME", type text}, {"COUNTRY", type text}, {"END USER", type text}, {"Institution / University", type text}, {"SO#", type text}, {"QTY", type text}, {"PRODUCTS", type text}, {"PACK DATE", type text}, {"SHIP DATE", type text}, {"PAYMENT TERMS", type text}, {"INVOICE $", type number}, {"COMMISSION", type text}, {"SHIPPING", type text}, {"ACTUAL SHIPPING", type number}, {"NET", type text}, {"...18", type text}, {"Source.y", type text}, {"Country", type text}, {"PO", type text}, {"Quote #", type text}, {"Product.x", type text}, {"Ordered", type date}, {"Amount", type number}, {"Cumulative", type number}, {"Days to close", type text}, {"productdetails", type text}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Country", "Country.1"}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"NET", type number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type1", each true),
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows", "MonthYear", each Text.Combine({Text.From(Date.Month([Ordered])), Text.From(Date.Year([Ordered]))}, " ")),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Custom1",{{"MonthYear", type date}}),
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type3", {{"ACTUAL SHIPPING", 0}}),
+    #"Replaced Errors1" = Table.ReplaceErrorValues(#"Replaced Errors", {{"INVOICE $", 0}}),
+    #"Replaced Errors2" = Table.ReplaceErrorValues(#"Replaced Errors1", {{"NET", 0}}),
+    #"Replaced Errors3" = Table.ReplaceErrorValues(#"Replaced Errors2", {{"Amount", 0}}),
+    #"Replaced Errors4" = Table.ReplaceErrorValues(#"Replaced Errors3", {{"Cumulative", 0}}),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Replaced Errors4",{{"MonthYear", type text}}),
+    #"Run R script" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidytext)#(lf)orders <- unnest_tokens(dataset, productdetails2, `Accessories/Details`, token = ""regex"", pattern = ""\\n"")",[dataset=#"Changed Type2"]),
+    #"""orders""" = #"Run R script"{[Name="orders"]}[Value],
+    #"Run R script1" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidytext)#(lf)orders <- unnest_tokens(dataset, productdetails3, productdetails2, token = ""regex"", pattern = ""     "")",[dataset=#"""orders"""]),
+    #"Expanded Value" = #"Run R script1"{[Name="orders"]}[Value],
+    #"Changed Type4" = Table.TransformColumnTypes(#"Expanded Value",{{"MonthYear", type date}}),
+    #"Filtered Rows1" = Table.SelectRows(#"Changed Type4", each ([Company] = "Felix")),
+    #"Grouped Rows" = Table.Group(#"Filtered Rows1", {"Product.y", "MonthYear"}, {{"Count", each Table.RowCount(_), Int64.Type}})
+in
+    #"Grouped Rows"
+
+Lead Source (Leads) Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Customer Journey Dashboard\All Leads 7-13-2023.xlsx"), null, true),
+    #"All Leads_Sheet" = Source{[Item="All Leads",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"All Leads_Sheet", [PromoteAllScalars=true]),
+    #"Run R script" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidytext)#(lf)AllLeadsUnnest <- unnest_tokens(dataset, product, `Products (Qualifying Opportunity) (Opportunity)`, token = ""regex"", pattern = "", "")",[dataset=#"Promoted Headers"]),
+    #"""AllLeadsUnnest""" = #"Run R script"{[Name="AllLeadsUnnest"]}[Value],
+    #"Added Conditional Column" = Table.AddColumn(#"""AllLeadsUnnest""", "Company", each if Text.StartsWith([product], "ci-") then "CID" else if Text.StartsWith([product], "f-") then "Felix" else "Interscan"),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Conditional Column",{{"Created On", type datetime}}),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Changed Type2",{{"Created On", type date}}),
+    #"Added Custom" = Table.AddColumn(#"Changed Type3", "MonthYear", each Text.Combine({Text.From(Date.Month([Created On])), Text.From(Date.Year([Created On]))}, " ")),
+    #"Grouped Rows" = Table.Group(#"Added Custom", {"MonthYear", "product", "Company", "Source Campaign"}, {{"Count", each Table.RowCount(_), Int64.Type}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Grouped Rows",{{"MonthYear", type date}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type1", each ([Company] <> "NA"))
+in
+    #"Filtered Rows"
+
+Published Papers Term Frequency Query:
+
+let
+    Source = Csv.Document(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Customer Journey Dashboard\PublishedPapersTermFrequency.csv"),[Delimiter=",", Columns=3, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Term", type text}, {"Frequency", type number}, {"Product", type text}}),
+    #"Replaced Value" = Table.ReplaceValue(#"Changed Type","CI-202","CI-202/CI-203",Replacer.ReplaceText,{"Product"}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","CI-600","CI-600/CI-602",Replacer.ReplaceText,{"Product"}),
+    #"Filtered Rows" = Table.SelectRows(#"Replaced Value1", each ([Frequency] <> 0) and ([Term] <> "BI" and [Term] <> "G" and [Term] <> "KI" and [Term] <> "NI" and [Term] <> "PI" and [Term] <> "SI"))
+in
+    #"Filtered Rows"
+
+Sensor Express Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Customer Journey Dashboard\Interscan Sensor Orderlist 2023 0808.xlsx"), null, true),
+    Allocation_Sheet = Source{[Item="Allocation",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(Allocation_Sheet, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Date", type text}, {"Customer Name", type text}, {"Country", type text}, {"S/E?", type text}, {"Interscan/ SO #", type any}, {"qty", type any}, {"Part Number", type text}, {"S/N", type any}, {"Description", type text}, {"Paid", type any}, {"Ship Date", type any}, {"Notes", type text}, {"HZ/HCHO 4000  ", type text}, {"H2S/H2S/H2O2/SO2/HCN HCl 4000", type date}, {"Cl2/NO2/ClO2 4000", type date}, {"C2H4/CO/CO-S 4000", type any}, {"EtO/PAA 4000", type any}, {"Membrapor", type date}, {"HZ/HCHO LD ", type text}, {"H2S/H2S/H2O2/SO2/HCN/HCL LD", type text}, {"Cl2/NO2/ClO2 LD", type text}, {"C2H4/CO/CO-S LD", type any}, {"EtO/PAA LD", type text}, {"Halimeter/VSC", type any}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type", each ([#"S/E?"] = "Y")),
+    #"Run R script" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidyverse)#(lf)Quantity <- str_extract(dataset$qty, ""\\d"")#(lf)Quantity <- ifelse(grepl(""[a-zA-Z]"", dataset$qty), Quantity, dataset$qty)#(lf)sensorexpress <- mutate(dataset, quantity = Quantity)",[dataset=#"Filtered Rows"]),
+    #"""sensorexpress""" = #"Run R script"{[Name="sensorexpress"]}[Value],
+    #"Run R script1" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidytext)#(lf)sensorexpress2 <- unnest_tokens(dataset, partnumber, `Part Number`, token = ""regex"", pattern = ""\n"")",[dataset=#"""sensorexpress"""]),
+    #"""sensorexpress2""" = #"Run R script1"{[Name="sensorexpress2"]}[Value],
+    #"Run R script2" = R.Execute("# 'dataset' holds the input data for this script#(lf)library(tidyverse)#(lf)SEUnnested <- dataset %>%#(lf)  group_by(`Interscan/ SO #`) %>%#(lf)  summarize(n = n(), Quantity = as.numeric(quantity) / n, partnumber = partnumber, Date = Date)",[dataset=#"""sensorexpress2"""]),
+    #"""SEUnnested""" = #"Run R script2"{[Name="SEUnnested"]}[Value],
+    #"Replaced Value" = Table.ReplaceValue(#"""SEUnnested""",null,1,Replacer.ReplaceValue,{"Quantity"}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Replaced Value",{{"Date", type date}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type1",{{"Quantity", "Sensor Express Subscriptions"}, {"partnumber", "Part Number"}})
+in
+    #"Renamed Columns"
+
+Distribution of Support Cases Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Customer Journey Dashboard\All Support Cases 6-2-2023 Support Project.xlsx"), null, true),
+    #"All Cases_Sheet" = Source{[Item="All Cases",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"All Cases_Sheet", [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"(Do Not Modify) Case", type text}, {"(Do Not Modify) Row Checksum", type text}, {"(Do Not Modify) Modified On", type datetime}, {"Case Title", type text}, {"Case Number", type text}, {"Priority", type text}, {"Origin", type text}, {"Customer", type text}, {"Owner", type text}, {"Status", type text}, {"Created On", type datetime}, {"First Response Sent", type text}, {"Last Interaction", type any}, {"Resolution", type text}, {"Resolution Date", type datetime}, {"Sentiment Value", type any}, {"Severity", type text}, {"Description", type text}, {"Product", type text}, {"Product (Web)", type text}, {"Contact", type text}, {"Contact Name (Web)", type text}, {"Case Age", type text}}),
+    #"Split Column by Character Transition" = Table.SplitColumn(#"Changed Type", "Case Title", Splitter.SplitTextByCharacterTransition({"0".."9"}, (c) => not List.Contains({"0".."9"}, c)), {"Case Title.1", "Case Title.2", "Case Title.3", "Case Title.4", "Case Title.5", "Case Title.6", "Case Title.7"}),
+    #"Removed Columns" = Table.RemoveColumns(#"Split Column by Character Transition",{"Case Title.2", "Case Title.3", "Case Title.4", "Case Title.5", "Case Title.6", "Case Title.7"}),
+    #"Split Column by Character Transition1" = Table.SplitColumn(#"Removed Columns", "Case Title.1", Splitter.SplitTextByCharacterTransition((c) => not List.Contains({"0".."9"}, c), {"0".."9"}), {"Case Title.1.1", "Case Title.1.2"}),
+    #"Added Conditional Column" = Table.AddColumn(#"Split Column by Character Transition1", "ProductID", each if [Case Title.1.2] = null then [Case Title.1.1] else [Case Title.1.2]),
+    #"Replaced Values" = Table.ReplaceValue(#"Added Conditional Column", "940", "F-940", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values2" = Table.ReplaceValue(#"Replaced Values", "602", "CI-602", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values3" = Table.ReplaceValue(#"Replaced Values2", "710", "CI-710s", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values4" = Table.ReplaceValue(#"Replaced Values3", "110", "CI-110", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values5" = Table.ReplaceValue(#"Replaced Values4", "203", "CI-203", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values6" = Table.ReplaceValue(#"Replaced Values5", "750", "F-750", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values7" = Table.ReplaceValue(#"Replaced Values6", "900", "F-900", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values8" = Table.ReplaceValue(#"Replaced Values7", "950", "F-950", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values9" = Table.ReplaceValue(#"Replaced Values8", "600", "CI-600", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values10" = Table.ReplaceValue(#"Replaced Values8", "202", "CI-202", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values11" = Table.ReplaceValue(#"Replaced Values10", "340", "CI-340", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values12" = Table.ReplaceValue(#"Replaced Values11", "F-750 Produce Quality Meter", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values13" = Table.ReplaceValue(#"Replaced Values12", "CI-110 Plant Canopy Imager", "CI-110", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values14" = Table.ReplaceValue(#"Replaced Values13", "F-940 Store It! Gas Analyzer", "F-940", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values15" = Table.ReplaceValue(#"Replaced Values14", "CI-602 Narrow Gauge Root Imager", "CI-602", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values16" = Table.ReplaceValue(#"Replaced Values15", "CI-710s SpectraVue Leaf Spectrometer", "CI-710s", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values17" = Table.ReplaceValue(#"Replaced Values16", "F-750 Produce Quality Meter", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values18" = Table.ReplaceValue(#"Replaced Values17", "F-751 Avocado Quality Meter", "F-751 Avocado", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values19" = Table.ReplaceValue(#"Replaced Values18", "F-901S AccuStore", "F-901S", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values20" = Table.ReplaceValue(#"Replaced Values19", "CI-340 Handheld Photosynthesis System", "CI-340", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values21" = Table.ReplaceValue(#"Replaced Values20", "CI-600 In-Situ Root Imager", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values22" = Table.ReplaceValue(#"Replaced Values21", "F-960 Ripen It! Gas Analyzer", "F-960", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values23" = Table.ReplaceValue(#"Replaced Values22", "F-900 Portable Ethylene Analyzer", "F-900", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values24" = Table.ReplaceValue(#"Replaced Values23", "F-751 Kiwi Quality Meter", "F-751 Kiwi", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values25" = Table.ReplaceValue(#"Replaced Values24", "CI-203 - Wand Format", "CI-203", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values26" = Table.ReplaceValue(#"Replaced Values25", "F-950 Three Gas Analyzer", "F-950", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values27" = Table.ReplaceValue(#"Replaced Values26", "F-751 Kiwi Quality Meter", "F-751 Kiwi", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values28" = Table.ReplaceValue(#"Replaced Values27", "CI-690 - RootSnap Root Image Analysis Software", "CI-690", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values29" = Table.ReplaceValue(#"Replaced Values28", "CI-203 Handheld Laser Leaf Area Meter - Wand Format", "CI-203", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values30" = Table.ReplaceValue(#"Replaced Values29", "CI-202 Portable Laser Leaf Area Meter", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values31" = Table.ReplaceValue(#"Replaced Values30", "F-920 Check It! Gas Analyzer", "F-920", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values32" = Table.ReplaceValue(#"Replaced Values31", "CI-301AD - Adjustable H2O and CO2 Control Module", "CI-301AD", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values33" = Table.ReplaceValue(#"Replaced Values32", "CI-202-Service - CI-202-Service", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values34" = Table.ReplaceValue(#"Replaced Values33", "CI-710-Service - CI-710-Service", "CI-710", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values35" = Table.ReplaceValue(#"Replaced Values34", "F-750 Reflectance cone", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values36" = Table.ReplaceValue(#"Replaced Values35", "F-751MAN Mango Quality Meter", "F-751 Mango", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values37" = Table.ReplaceValue(#"Replaced Values36", "F-751 Mango Quality Meter", "F-751 Mango", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values38" = Table.ReplaceValue(#"Replaced Values37", "F-901B - F-901B", "F-901B", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values39" = Table.ReplaceValue(#"Replaced Values38", "F-901D10  AccuRipe", "F-901D", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values40" = Table.ReplaceValue(#"Replaced Values39", "F-901R AccuRipe", "F-901R", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values41" = Table.ReplaceValue(#"Replaced Values40", "GasD 8000  Hydrazine  0 - 2000 ppb1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values42" = Table.ReplaceValue(#"Replaced Values41", "GasD 8000 Portable Gas Detector - Formaldehyde - 8160-20.00m1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values43" = Table.ReplaceValue(#"Replaced Values42", "GasD 8000 Portable Gas Detector - Formaldehyde - 8160-2000b1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values44" = Table.ReplaceValue(#"Replaced Values43", "Halimeter Plus - Halitosis Detection", "Halimeter Plus", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values45" = Table.ReplaceValue(#"Replaced Values44", "960", "F-960", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values46" = Table.ReplaceValue(#"Replaced Values45", "690", "CI-690", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values47" = Table.ReplaceValue(#"Replaced Values46", "920", "F-920", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values48" = Table.ReplaceValue(#"Replaced Values47", "301", "CI-301AD", Replacer.ReplaceText, {"ProductID"}),
+    #"Added Conditional Column1" = Table.AddColumn(#"Replaced Values48", "ActualProducts", each if [Product] = null then [ProductID] else [Product]),
+    #"Filtered Rows" = Table.SelectRows(#"Added Conditional Column1", each ([ActualProducts] = "CI-110" or [ActualProducts] = "CI-202" or [ActualProducts] = "CI-203" or [ActualProducts] = "CI-301AD" or [ActualProducts] = "CI-340" or [ActualProducts] = "CI-602" or [ActualProducts] = "CI-690" or [ActualProducts] = "CI-710" or [ActualProducts] = "CI-710s" or [ActualProducts] = "F-750" or [ActualProducts] = "F-751 Avocado" or [ActualProducts] = "F-751 Kiwi" or [ActualProducts] = "F-751 Mango" or [ActualProducts] = "F-751 Melon" or [ActualProducts] = "F-900" or [ActualProducts] = "F-901B" or [ActualProducts] = "F-901D" or [ActualProducts] = "F-901R" or [ActualProducts] = "F-901S" or [ActualProducts] = "F-920" or [ActualProducts] = "F-940" or [ActualProducts] = "F-950" or [ActualProducts] = "F-960" or [ActualProducts] = "GasD 8000" or [ActualProducts] = "Halimeter Plus" or [ActualProducts] = "ModelBuilder")),
+    #"Added Conditional Column2" = Table.AddColumn(#"Filtered Rows", "Company", each if Text.StartsWith([ActualProducts], "CI") then "CID" else if Text.StartsWith([ActualProducts], "F") then "Felix" else if [ActualProducts] = "ModelBuilder" then "CID" else "Interscan"),
+    #"Added Custom" = Table.AddColumn(#"Added Conditional Column2", "Time Until Resolution", each [Resolution Date] - [Created On]),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom",{{"Time Until Resolution", type number}}),
+    #"Grouped Rows" = Table.Group(#"Changed Type1", {"ActualProducts", "Company"}, {{"Count", each Table.RowCount(_), Int64.Type}}),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Grouped Rows",{{"Count", type number}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type2",{{"ActualProducts", "Products"}})
+in
+    #"Renamed Columns"
+
+Time Until Case Resolution Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Customer Journey Dashboard\All Support Cases 6-2-2023 Support Project.xlsx"), null, true),
+    #"All Cases_Sheet" = Source{[Item="All Cases",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"All Cases_Sheet", [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"(Do Not Modify) Case", type text}, {"(Do Not Modify) Row Checksum", type text}, {"(Do Not Modify) Modified On", type datetime}, {"Case Title", type text}, {"Case Number", type text}, {"Priority", type text}, {"Origin", type text}, {"Customer", type text}, {"Owner", type text}, {"Status", type text}, {"Created On", type datetime}, {"First Response Sent", type text}, {"Last Interaction", type any}, {"Resolution", type text}, {"Resolution Date", type datetime}, {"Sentiment Value", type any}, {"Severity", type text}, {"Description", type text}, {"Product", type text}, {"Product (Web)", type text}, {"Contact", type text}, {"Contact Name (Web)", type text}, {"Case Age", type text}}),
+    #"Split Column by Character Transition" = Table.SplitColumn(#"Changed Type", "Case Title", Splitter.SplitTextByCharacterTransition({"0".."9"}, (c) => not List.Contains({"0".."9"}, c)), {"Case Title.1", "Case Title.2", "Case Title.3", "Case Title.4", "Case Title.5", "Case Title.6", "Case Title.7"}),
+    #"Removed Columns" = Table.RemoveColumns(#"Split Column by Character Transition",{"Case Title.2", "Case Title.3", "Case Title.4", "Case Title.5", "Case Title.6", "Case Title.7"}),
+    #"Split Column by Character Transition1" = Table.SplitColumn(#"Removed Columns", "Case Title.1", Splitter.SplitTextByCharacterTransition((c) => not List.Contains({"0".."9"}, c), {"0".."9"}), {"Case Title.1.1", "Case Title.1.2"}),
+    #"Added Conditional Column" = Table.AddColumn(#"Split Column by Character Transition1", "ProductID", each if [Case Title.1.2] = null then [Case Title.1.1] else [Case Title.1.2]),
+    #"Replaced Values" = Table.ReplaceValue(#"Added Conditional Column", "940", "F-940", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values2" = Table.ReplaceValue(#"Replaced Values", "602", "CI-602", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values3" = Table.ReplaceValue(#"Replaced Values2", "710", "CI-710s", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values4" = Table.ReplaceValue(#"Replaced Values3", "110", "CI-110", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values5" = Table.ReplaceValue(#"Replaced Values4", "203", "CI-203", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values6" = Table.ReplaceValue(#"Replaced Values5", "750", "F-750", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values7" = Table.ReplaceValue(#"Replaced Values6", "900", "F-900", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values8" = Table.ReplaceValue(#"Replaced Values7", "950", "F-950", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values9" = Table.ReplaceValue(#"Replaced Values8", "600", "CI-600", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values10" = Table.ReplaceValue(#"Replaced Values8", "202", "CI-202", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values11" = Table.ReplaceValue(#"Replaced Values10", "340", "CI-340", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values12" = Table.ReplaceValue(#"Replaced Values11", "F-750 Produce Quality Meter", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values13" = Table.ReplaceValue(#"Replaced Values12", "CI-110 Plant Canopy Imager", "CI-110", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values14" = Table.ReplaceValue(#"Replaced Values13", "F-940 Store It! Gas Analyzer", "F-940", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values15" = Table.ReplaceValue(#"Replaced Values14", "CI-602 Narrow Gauge Root Imager", "CI-602", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values16" = Table.ReplaceValue(#"Replaced Values15", "CI-710s SpectraVue Leaf Spectrometer", "CI-710s", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values17" = Table.ReplaceValue(#"Replaced Values16", "F-750 Produce Quality Meter", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values18" = Table.ReplaceValue(#"Replaced Values17", "F-751 Avocado Quality Meter", "F-751 Avocado", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values19" = Table.ReplaceValue(#"Replaced Values18", "F-901S AccuStore", "F-901S", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values20" = Table.ReplaceValue(#"Replaced Values19", "CI-340 Handheld Photosynthesis System", "CI-340", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values21" = Table.ReplaceValue(#"Replaced Values20", "CI-600 In-Situ Root Imager", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values22" = Table.ReplaceValue(#"Replaced Values21", "F-960 Ripen It! Gas Analyzer", "F-960", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values23" = Table.ReplaceValue(#"Replaced Values22", "F-900 Portable Ethylene Analyzer", "F-900", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values24" = Table.ReplaceValue(#"Replaced Values23", "F-751 Kiwi Quality Meter", "F-751 Kiwi", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values25" = Table.ReplaceValue(#"Replaced Values24", "CI-203 - Wand Format", "CI-203", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values26" = Table.ReplaceValue(#"Replaced Values25", "F-950 Three Gas Analyzer", "F-950", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values27" = Table.ReplaceValue(#"Replaced Values26", "F-751 Kiwi Quality Meter", "F-751 Kiwi", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values28" = Table.ReplaceValue(#"Replaced Values27", "CI-690 - RootSnap Root Image Analysis Software", "CI-690", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values29" = Table.ReplaceValue(#"Replaced Values28", "CI-203 Handheld Laser Leaf Area Meter - Wand Format", "CI-203", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values30" = Table.ReplaceValue(#"Replaced Values29", "CI-202 Portable Laser Leaf Area Meter", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values31" = Table.ReplaceValue(#"Replaced Values30", "F-920 Check It! Gas Analyzer", "F-920", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values32" = Table.ReplaceValue(#"Replaced Values31", "CI-301AD - Adjustable H2O and CO2 Control Module", "CI-301AD", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values33" = Table.ReplaceValue(#"Replaced Values32", "CI-202-Service - CI-202-Service", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values34" = Table.ReplaceValue(#"Replaced Values33", "CI-710-Service - CI-710-Service", "CI-710", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values35" = Table.ReplaceValue(#"Replaced Values34", "F-750 Reflectance cone", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values36" = Table.ReplaceValue(#"Replaced Values35", "F-751MAN Mango Quality Meter", "F-751 Mango", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values37" = Table.ReplaceValue(#"Replaced Values36", "F-751 Mango Quality Meter", "F-751 Mango", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values38" = Table.ReplaceValue(#"Replaced Values37", "F-901B - F-901B", "F-901B", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values39" = Table.ReplaceValue(#"Replaced Values38", "F-901D10  AccuRipe", "F-901D", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values40" = Table.ReplaceValue(#"Replaced Values39", "F-901R AccuRipe", "F-901R", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values41" = Table.ReplaceValue(#"Replaced Values40", "GasD 8000  Hydrazine  0 - 2000 ppb1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values42" = Table.ReplaceValue(#"Replaced Values41", "GasD 8000 Portable Gas Detector - Formaldehyde - 8160-20.00m1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values43" = Table.ReplaceValue(#"Replaced Values42", "GasD 8000 Portable Gas Detector - Formaldehyde - 8160-2000b1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values44" = Table.ReplaceValue(#"Replaced Values43", "Halimeter Plus - Halitosis Detection", "Halimeter Plus", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values45" = Table.ReplaceValue(#"Replaced Values44", "960", "F-960", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values46" = Table.ReplaceValue(#"Replaced Values45", "690", "CI-690", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values47" = Table.ReplaceValue(#"Replaced Values46", "920", "F-920", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values48" = Table.ReplaceValue(#"Replaced Values47", "301", "CI-301AD", Replacer.ReplaceText, {"ProductID"}),
+    #"Added Conditional Column1" = Table.AddColumn(#"Replaced Values48", "ActualProducts", each if [Product] = null then [ProductID] else [Product]),
+    #"Filtered Rows" = Table.SelectRows(#"Added Conditional Column1", each ([ActualProducts] = "CI-110" or [ActualProducts] = "CI-202" or [ActualProducts] = "CI-203" or [ActualProducts] = "CI-301AD" or [ActualProducts] = "CI-340" or [ActualProducts] = "CI-602" or [ActualProducts] = "CI-690" or [ActualProducts] = "CI-710" or [ActualProducts] = "CI-710s" or [ActualProducts] = "F-750" or [ActualProducts] = "F-751 Avocado" or [ActualProducts] = "F-751 Kiwi" or [ActualProducts] = "F-751 Mango" or [ActualProducts] = "F-751 Melon" or [ActualProducts] = "F-900" or [ActualProducts] = "F-901B" or [ActualProducts] = "F-901D" or [ActualProducts] = "F-901R" or [ActualProducts] = "F-901S" or [ActualProducts] = "F-920" or [ActualProducts] = "F-940" or [ActualProducts] = "F-950" or [ActualProducts] = "F-960" or [ActualProducts] = "GasD 8000" or [ActualProducts] = "Halimeter Plus" or [ActualProducts] = "ModelBuilder")),
+    #"Added Conditional Column2" = Table.AddColumn(#"Filtered Rows", "Company", each if Text.StartsWith([ActualProducts], "CI") then "CID" else if Text.StartsWith([ActualProducts], "F") then "Felix" else if [ActualProducts] = "ModelBuilder" then "CID" else "Interscan"),
+    #"Added Custom" = Table.AddColumn(#"Added Conditional Column2", "Time Until Resolution", each [Resolution Date] - [Created On]),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom",{{"Time Until Resolution", type number}}),
+    #"Grouped Rows" = Table.Group(#"Changed Type1", {"ActualProducts", "Company"}, {{"Average Time Until Resoluion", each List.Average([Time Until Resolution]), type nullable number}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Grouped Rows",{{"ActualProducts", "Products"}})
+in
+    #"Renamed Columns"
+
+RMA Cases Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Customer Journey Dashboard\All Support Cases 6-2-2023 Support Project.xlsx"), null, true),
+    #"All Cases_Sheet" = Source{[Item="All Cases",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"All Cases_Sheet", [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"(Do Not Modify) Case", type text}, {"(Do Not Modify) Row Checksum", type text}, {"(Do Not Modify) Modified On", type datetime}, {"Case Title", type text}, {"Case Number", type text}, {"Priority", type text}, {"Origin", type text}, {"Customer", type text}, {"Owner", type text}, {"Status", type text}, {"Created On", type datetime}, {"First Response Sent", type text}, {"Last Interaction", type any}, {"Resolution", type text}, {"Resolution Date", type datetime}, {"Sentiment Value", type any}, {"Severity", type text}, {"Description", type text}, {"Product", type text}, {"Product (Web)", type text}, {"Contact", type text}, {"Contact Name (Web)", type text}, {"Case Age", type text}}),
+    #"Duplicated Column" = Table.DuplicateColumn(#"Changed Type", "Case Title", "Case Title - Copy"),
+    #"Split Column by Character Transition" = Table.SplitColumn(#"Duplicated Column", "Case Title", Splitter.SplitTextByCharacterTransition({"0".."9"}, (c) => not List.Contains({"0".."9"}, c)), {"Case Title.1", "Case Title.2", "Case Title.3", "Case Title.4", "Case Title.5", "Case Title.6", "Case Title.7"}),
+    #"Removed Columns" = Table.RemoveColumns(#"Split Column by Character Transition",{"Case Title.2", "Case Title.3", "Case Title.4", "Case Title.5", "Case Title.6", "Case Title.7"}),
+    #"Split Column by Character Transition1" = Table.SplitColumn(#"Removed Columns", "Case Title.1", Splitter.SplitTextByCharacterTransition((c) => not List.Contains({"0".."9"}, c), {"0".."9"}), {"Case Title.1.1", "Case Title.1.2"}),
+    #"Added Conditional Column" = Table.AddColumn(#"Split Column by Character Transition1", "ProductID", each if [Case Title.1.2] = null then [Case Title.1.1] else [Case Title.1.2]),
+    #"Replaced Values" = Table.ReplaceValue(#"Added Conditional Column", "940", "F-940", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values2" = Table.ReplaceValue(#"Replaced Values", "602", "CI-602", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values3" = Table.ReplaceValue(#"Replaced Values2", "710", "CI-710s", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values4" = Table.ReplaceValue(#"Replaced Values3", "110", "CI-110", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values5" = Table.ReplaceValue(#"Replaced Values4", "203", "CI-203", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values6" = Table.ReplaceValue(#"Replaced Values5", "750", "F-750", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values7" = Table.ReplaceValue(#"Replaced Values6", "900", "F-900", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values8" = Table.ReplaceValue(#"Replaced Values7", "950", "F-950", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values9" = Table.ReplaceValue(#"Replaced Values8", "600", "CI-600", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values10" = Table.ReplaceValue(#"Replaced Values8", "202", "CI-202", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values11" = Table.ReplaceValue(#"Replaced Values10", "340", "CI-340", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values12" = Table.ReplaceValue(#"Replaced Values11", "F-750 Produce Quality Meter", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values13" = Table.ReplaceValue(#"Replaced Values12", "CI-110 Plant Canopy Imager", "CI-110", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values14" = Table.ReplaceValue(#"Replaced Values13", "F-940 Store It! Gas Analyzer", "F-940", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values15" = Table.ReplaceValue(#"Replaced Values14", "CI-602 Narrow Gauge Root Imager", "CI-602", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values16" = Table.ReplaceValue(#"Replaced Values15", "CI-710s SpectraVue Leaf Spectrometer", "CI-710s", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values17" = Table.ReplaceValue(#"Replaced Values16", "F-750 Produce Quality Meter", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values18" = Table.ReplaceValue(#"Replaced Values17", "F-751 Avocado Quality Meter", "F-751 Avocado", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values19" = Table.ReplaceValue(#"Replaced Values18", "F-901S AccuStore", "F-901S", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values20" = Table.ReplaceValue(#"Replaced Values19", "CI-340 Handheld Photosynthesis System", "CI-340", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values21" = Table.ReplaceValue(#"Replaced Values20", "CI-600 In-Situ Root Imager", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values22" = Table.ReplaceValue(#"Replaced Values21", "F-960 Ripen It! Gas Analyzer", "F-960", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values23" = Table.ReplaceValue(#"Replaced Values22", "F-900 Portable Ethylene Analyzer", "F-900", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values24" = Table.ReplaceValue(#"Replaced Values23", "F-751 Kiwi Quality Meter", "F-751 Kiwi", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values25" = Table.ReplaceValue(#"Replaced Values24", "CI-203 - Wand Format", "CI-203", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values26" = Table.ReplaceValue(#"Replaced Values25", "F-950 Three Gas Analyzer", "F-950", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values27" = Table.ReplaceValue(#"Replaced Values26", "F-751 Kiwi Quality Meter", "F-751 Kiwi", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values28" = Table.ReplaceValue(#"Replaced Values27", "CI-690 - RootSnap Root Image Analysis Software", "CI-690", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values29" = Table.ReplaceValue(#"Replaced Values28", "CI-203 Handheld Laser Leaf Area Meter - Wand Format", "CI-203", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values30" = Table.ReplaceValue(#"Replaced Values29", "CI-202 Portable Laser Leaf Area Meter", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values31" = Table.ReplaceValue(#"Replaced Values30", "F-920 Check It! Gas Analyzer", "F-920", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values32" = Table.ReplaceValue(#"Replaced Values31", "CI-301AD - Adjustable H2O and CO2 Control Module", "CI-301AD", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values33" = Table.ReplaceValue(#"Replaced Values32", "CI-202-Service - CI-202-Service", "CI-202", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values34" = Table.ReplaceValue(#"Replaced Values33", "CI-710-Service - CI-710-Service", "CI-710", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values35" = Table.ReplaceValue(#"Replaced Values34", "F-750 Reflectance cone", "F-750", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values36" = Table.ReplaceValue(#"Replaced Values35", "F-751MAN Mango Quality Meter", "F-751 Mango", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values37" = Table.ReplaceValue(#"Replaced Values36", "F-751 Mango Quality Meter", "F-751 Mango", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values38" = Table.ReplaceValue(#"Replaced Values37", "F-901B - F-901B", "F-901B", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values39" = Table.ReplaceValue(#"Replaced Values38", "F-901D10  AccuRipe", "F-901D", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values40" = Table.ReplaceValue(#"Replaced Values39", "F-901R AccuRipe", "F-901R", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values41" = Table.ReplaceValue(#"Replaced Values40", "GasD 8000  Hydrazine  0 - 2000 ppb1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values42" = Table.ReplaceValue(#"Replaced Values41", "GasD 8000 Portable Gas Detector - Formaldehyde - 8160-20.00m1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values43" = Table.ReplaceValue(#"Replaced Values42", "GasD 8000 Portable Gas Detector - Formaldehyde - 8160-2000b1", "GasD 8000", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values44" = Table.ReplaceValue(#"Replaced Values43", "Halimeter Plus - Halitosis Detection", "Halimeter Plus", Replacer.ReplaceText, {"Product"}),
+    #"Replaced Values45" = Table.ReplaceValue(#"Replaced Values44", "960", "F-960", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values46" = Table.ReplaceValue(#"Replaced Values45", "690", "CI-690", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values47" = Table.ReplaceValue(#"Replaced Values46", "920", "F-920", Replacer.ReplaceText, {"ProductID"}),
+    #"Replaced Values48" = Table.ReplaceValue(#"Replaced Values47", "301", "CI-301AD", Replacer.ReplaceText, {"ProductID"}),
+    #"Added Conditional Column1" = Table.AddColumn(#"Replaced Values48", "ActualProducts", each if [Product] = null then [ProductID] else [Product]),
+    #"Filtered Rows" = Table.SelectRows(#"Added Conditional Column1", each ([ActualProducts] = "CI-110" or [ActualProducts] = "CI-202" or [ActualProducts] = "CI-203" or [ActualProducts] = "CI-301AD" or [ActualProducts] = "CI-340" or [ActualProducts] = "CI-602" or [ActualProducts] = "CI-690" or [ActualProducts] = "CI-710" or [ActualProducts] = "CI-710s" or [ActualProducts] = "F-750" or [ActualProducts] = "F-751 Avocado" or [ActualProducts] = "F-751 Kiwi" or [ActualProducts] = "F-751 Mango" or [ActualProducts] = "F-751 Melon" or [ActualProducts] = "F-900" or [ActualProducts] = "F-901B" or [ActualProducts] = "F-901D" or [ActualProducts] = "F-901R" or [ActualProducts] = "F-901S" or [ActualProducts] = "F-920" or [ActualProducts] = "F-940" or [ActualProducts] = "F-950" or [ActualProducts] = "F-960" or [ActualProducts] = "GasD 8000" or [ActualProducts] = "Halimeter Plus" or [ActualProducts] = "ModelBuilder")),
+    #"Added Conditional Column2" = Table.AddColumn(#"Filtered Rows", "Company", each if Text.StartsWith([ActualProducts], "CI") then "CID" else if Text.StartsWith([ActualProducts], "F") then "Felix" else if [ActualProducts] = "ModelBuilder" then "CID" else "Interscan"),
+    #"Added Custom" = Table.AddColumn(#"Added Conditional Column2", "Time Until Resolution", each [Resolution Date] - [Created On]),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom",{{"Time Until Resolution", type number}}),
+    #"Added Custom1" = Table.AddColumn(#"Changed Type1", "RMA1", each if Text.Contains([Description], "RMA") then "Yes" else "No"),
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"Added Custom1", {{"RMA1", "No"}}),
+    #"Added Conditional Column4" = Table.AddColumn(#"Replaced Errors", "RMA3", each if Text.Contains([#"Case Title - Copy"], "RMA") then "Yes" else if [RMA1] = "Yes" then "Yes" else if Text.Contains([Resolution], "RMA") then "Yes" else "No"),
+    #"Replaced Errors1" = Table.ReplaceErrorValues(#"Added Conditional Column4", {{"RMA3", "No"}}),
+    #"Filtered Rows1" = Table.SelectRows(#"Replaced Errors1", each ([Status] = "Resolved")),
+    #"Grouped Rows" = Table.Group(#"Filtered Rows1", {"RMA3", "ActualProducts", "Company"}, {{"Count", each Table.RowCount(_), Int64.Type}}),
+    #"Pivoted Column" = Table.Pivot(#"Grouped Rows", List.Distinct(#"Grouped Rows"[RMA3]), "RMA3", "Count", List.Sum),
+    #"Replaced Value" = Table.ReplaceValue(#"Pivoted Column",null,0,Replacer.ReplaceValue,{"Yes"}),
+    #"Renamed Columns" = Table.RenameColumns(#"Replaced Value",{{"ActualProducts", "Products"}})
+in
+    #"Renamed Columns"

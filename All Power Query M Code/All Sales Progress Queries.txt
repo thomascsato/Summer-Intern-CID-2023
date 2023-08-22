@@ -1,0 +1,264 @@
+Interscan Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    INTERSCAN_Sheet = Source{[Item="INTERSCAN",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(INTERSCAN_Sheet, [PromoteAllScalars=true]),
+    #"Promoted Headers1" = Table.PromoteHeaders(#"Promoted Headers", [PromoteAllScalars=true]),
+    #"Promoted Headers2" = Table.PromoteHeaders(#"Promoted Headers1", [PromoteAllScalars=true]),
+    #"Promoted Headers3" = Table.PromoteHeaders(#"Promoted Headers2", [PromoteAllScalars=true]),
+    #"Promoted Headers4" = Table.PromoteHeaders(#"Promoted Headers3", [PromoteAllScalars=true]),
+    #"Promoted Headers5" = Table.PromoteHeaders(#"Promoted Headers4", [PromoteAllScalars=true]),
+    #"Filtered Rows" = Table.SelectRows(#"Promoted Headers5", each ([Column1] = "INTERSCAN DEVICES Cum" or [Column1] = "INTERSCAN DEVICES OUT" or [Column1] = "INTERSCAN OVERALL Cum" or [Column1] = "INTERSCAN OVERALL OUT" or [Column1] = "INTERSCAN SENSORS Cum" or [Column1] = "INTERSCAN SENSORS OUT")),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Filtered Rows", {"Column1"}, "Attribute", "Value"),
+    #"Renamed Columns" = Table.RenameColumns(#"Unpivoted Columns",{{"Value", "Revenue"}, {"Attribute", "Month"}}),
+    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns",{{"Revenue", type number}}),
+    #"Added Custom" = Table.AddColumn(#"Changed Type", "Custom", each if [Month] = "Jan" then 1 else if [Month] = "Feb" then 2 else if [Month] = "Mar" then 3 else if [Month] = "Apr" then 4 else if [Month] = "May" then 5 else if [Month] = "Jun" then 6 else if [Month] = "Jul" then 7 else if [Month] = "Aug" then 8 else if [Month] = "Sep" then 9 else if [Month] = "Oct" then 10 else if [Month] = "Nov" then 11 else if [Month] = "Dec" then 12 else null),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom",{{"Custom", type number}})
+in
+    #"Changed Type1"
+
+Instruments - 6 yr avg v total Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    SUM_Sheet = Source{[Item="SUM",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(SUM_Sheet, [PromoteAllScalars=true]),
+    #"Promoted Headers1" = Table.PromoteHeaders(#"Promoted Headers", [PromoteAllScalars=true]),
+    #"Filtered Rows1" = Table.SelectRows(#"Promoted Headers1", each ([Column1] <> null and [Column1] <> "CI-610" and [Column1] <> "F-751 Mel" and [Column1] <> "INSTRUMENTS - Cum v 6yr Avg" and [Column1] <> "New Item" and [Column1] <> "TTL CID CORP IN" and [Column1] <> "TTL CID CORP IN Cum v LY" and [Column1] <> "TTL CID CORP OUT" and [Column1] <> "TTL CID CORP OUT Cum v LY" and [Column1] <> "TTL ROOT")),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Filtered Rows1",{{"Column2", type number}, {"TTL 2023", type number}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type1",{{"TTL 2023", "2023 Total"}, {"Column2", "Cumulative Six Year Average"}, {"Column1", "Instruments"}}),
+    #"Removed Other Columns" = Table.SelectColumns(#"Renamed Columns",{"Instruments", "Cumulative Six Year Average", "2023 Total"}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Removed Other Columns", {"Instruments"}, "Attribute", "Value")
+in
+    #"Unpivoted Columns"
+
+Instruments - progress Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    SUM_Sheet = Source{[Item="SUM",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(SUM_Sheet, [PromoteAllScalars=true]),
+    #"Promoted Headers1" = Table.PromoteHeaders(#"Promoted Headers", [PromoteAllScalars=true]),
+    #"Filtered Rows1" = Table.SelectRows(#"Promoted Headers1", each ([Column1] <> null and [Column1] <> "CI-610" and [Column1] <> "F-751 Mel" and [Column1] <> "INSTRUMENTS - Cum v 6yr Avg" and [Column1] <> "New Item" and [Column1] <> "TTL CID CORP IN" and [Column1] <> "TTL CID CORP IN Cum v LY" and [Column1] <> "TTL CID CORP OUT" and [Column1] <> "TTL CID CORP OUT Cum v LY" and [Column1] <> "TTL ROOT")),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Filtered Rows1",{{"Column2", type number}, {"TTL 2023", type number}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type1",{{"TTL 2023", "2023 Total"}, {"Column2", "Cumulative Six Year Average"}, {"Column1", "Instruments"}}),
+    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns",{{"Dec", type number}, {"Nov", type number}, {"Oct", type number}, {"Sep", type number}, {"Aug", type number}, {"Jul", type number}, {"Jun", type number}, {"May", type number}, {"Apr", type number}, {"Mar", type number}, {"Feb", type number}, {"Jan", type number}}),
+    #"Demoted Headers" = Table.DemoteHeaders(#"Changed Type"),
+    #"Transposed Table" = Table.Transpose(#"Demoted Headers"),
+    #"Promoted Headers2" = Table.PromoteHeaders(#"Transposed Table", [PromoteAllScalars=true]),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Promoted Headers2",{{"CI-110", type number}, {"CI-202", type number}, {"CI-203", type number}, {"CI-340", type number}, {"CI-600", type number}, {"CI-602", type number}, {"CI-710", type number}, {"F-750", type number}, {"F-751 Avo", type number}, {"F-751 Man", type number}, {"F-751 Kiwi", type number}, {"F-900", type number}, {"F-901", type number}, {"F-920", type number}, {"F-940", type number}, {"F-950", type number}, {"F-960", type number}, {"I-900", type number}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type2", each ([Instruments] <> "2023 Total" and [Instruments] <> "Column16" and [Instruments] <> "Column17" and [Instruments] <> "Column18" and [Instruments] <> "Cumulative Six Year Average")),
+    #"Renamed Columns1" = Table.RenameColumns(#"Filtered Rows",{{"Instruments", "Month"}}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Renamed Columns1", {"Month"}, "Attribute", "Value"),
+    #"Renamed Columns2" = Table.RenameColumns(#"Unpivoted Columns",{{"Attribute", "Instrument"}, {"Value", "Progress"}}),
+    #"Added Column" = Table.AddColumn(#"Renamed Columns2", "Custom", each if [Month] = "Jan" then 1 else if [Month] = "Feb" then 2 else if [Month] = "Mar" then 3 else if [Month] = "Apr" then 4 else if [Month] = "May" then 5 else if [Month] = "Jun" then 6 else if [Month] = "Jul" then 7 else if [Month] = "Aug" then 8 else if [Month] = "Sep" then 9 else if [Month] = "Oct" then 10 else if [Month] = "Nov" then 11 else if [Month] = "Dec" then 12 else null)
+in
+    #"Added Column"
+
+Total - Cards Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    SUM_Sheet = Source{[Item="SUM",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(SUM_Sheet, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"ALL 2023 TARGETS", type text}, {"Column2", type any}, {"Column3", type any}, {"Column4", type any}, {"GOALS: $7,000,000 in 2023 - $8,000 in Bonus", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"Column10", type any}, {"Column11", type any}, {"Column12", type any}, {"Column13", type any}, {"Column14", type any}, {"Column15", type any}, {"Column16", type any}, {"Column17", type any}, {"Column18", type any}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type", each ([ALL 2023 TARGETS] = "TTL CID CORP IN" or [ALL 2023 TARGETS] = "TTL CID CORP IN Cum v LY" or [ALL 2023 TARGETS] = "TTL CID CORP OUT" or [ALL 2023 TARGETS] = "TTL CID CORP OUT Cum v LY")),
+    #"Removed Other Columns" = Table.SelectColumns(#"Filtered Rows",{"ALL 2023 TARGETS", "Column15"}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Removed Other Columns",{{"Column15", type number}}),
+    #"Pivoted Column" = Table.Pivot(#"Changed Type1", List.Distinct(#"Changed Type1"[#"ALL 2023 TARGETS"]), "ALL 2023 TARGETS", "Column15", List.Sum),
+    #"Added Custom" = Table.AddColumn(#"Pivoted Column", "2023 IN Progress", each [TTL CID CORP IN Cum v LY] * 100),
+    #"Added Custom1" = Table.AddColumn(#"Added Custom", "2023 OUT Progress", each [TTL CID CORP OUT Cum v LY] * 100),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Custom1",{{"2023 IN Progress", type number}, {"2023 OUT Progress", type number}})
+in
+    #"Changed Type2"
+
+Total - Progress Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    SUM_Sheet = Source{[Item="SUM",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(SUM_Sheet, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"ALL 2023 TARGETS", type text}, {"Column2", type any}, {"Column3", type any}, {"Column4", type any}, {"GOALS: $7,000,000 in 2023 - $8,000 in Bonus", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"Column10", type any}, {"Column11", type any}, {"Column12", type any}, {"Column13", type any}, {"Column14", type any}, {"Column15", type any}, {"Column16", type any}, {"Column17", type any}, {"Column18", type any}}),
+    #"Promoted Headers1" = Table.PromoteHeaders(#"Changed Type", [PromoteAllScalars=true]),
+    #"Filtered Rows" = Table.SelectRows(#"Promoted Headers1", each ([Column1] = "TTL CID CORP IN Cum v LY" or [Column1] = "TTL CID CORP OUT Cum v LY")),
+    #"Removed Other Columns" = Table.SelectColumns(#"Filtered Rows",{"Column1", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Removed Other Columns",{{"Jan", type number}, {"Feb", type number}, {"Mar", type number}, {"Apr", type number}, {"May", type number}, {"Jun", type number}, {"Jul", type number}, {"Aug", type number}, {"Sep", type number}, {"Oct", type number}, {"Nov", type number}, {"Dec", type number}}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Changed Type1", {"Column1"}, "Month", "Value"),
+    #"Added Conditional Column" = Table.AddColumn(#"Unpivoted Columns", "Custom", each if [Month] = "Jan" then 1 else if [Month] = "Feb" then 2 else if [Month] = "Mar" then 3 else if [Month] = "Apr" then 4 else if [Month] = "May" then 5 else if [Month] = "Jun" then 6 else if [Month] = "Jul" then 7 else if [Month] = "Aug" then 8 else if [Month] = "Sep" then 9 else if [Month] = "Oct" then 10 else if [Month] = "Nov" then 11 else if [Month] = "Dec" then 12 else null),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Conditional Column",{{"Custom", type number}}),
+    #"Replaced Value" = Table.ReplaceValue(#"Changed Type2","TTL CID CORP IN Cum v LY","IN Progress",Replacer.ReplaceText,{"Column1"}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","TTL CID CORP OUT Cum v LY","OUT Progress",Replacer.ReplaceText,{"Column1"})
+in
+    #"Replaced Value1"
+
+Total - LY Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    #"MAINTAIN CORE_Sheet" = Source{[Item="MAINTAIN CORE",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"MAINTAIN CORE_Sheet", [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"MAINTAIN CORE CID: PROGRESS", type text}, {"Column2", type any}, {"Column3", type any}, {"Column4", type any}, {"Column5", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"Column10", type any}, {"Column11", type any}, {"Column12", type any}, {"Column13", type any}, {"Column14", type any}, {"Column15", type any}}),
+    #"Added Index" = Table.AddIndexColumn(#"Changed Type", "Index", 0, 1, Int64.Type),
+    #"Added Conditional Column" = Table.AddColumn(#"Added Index", "Categories", each if [Index] = 13 then "LY Mth Avg Cumed OUT" else if [Index] = 11 then "CORE Cum OUT" else if [Index] = 19 then "Raw 2022 Values OUT" else if [Index] = 18 then "Raw 2022 Values IN" else [#"MAINTAIN CORE CID: PROGRESS"]),
+    #"Filtered Rows" = Table.SelectRows(#"Added Conditional Column", each ([Categories] <> null)),
+    #"Renamed Columns" = Table.RenameColumns(#"Filtered Rows",{{"Column2", "Jan"}, {"Column3", "Feb"}, {"Column4", "Mar"}, {"Column5", "Apr"}, {"Column6", "May"}, {"Column7", "Jun"}, {"Column8", "Jul"}, {"Column9", "Aug"}, {"Column10", "Sep"}, {"Column11", "Oct"}, {"Column12", "Nov"}, {"Column13", "Dec"}}),
+    #"Filtered Rows1" = Table.SelectRows(#"Renamed Columns", each ([Categories] <> "CORE Progress v LY")),
+    #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows1",{"MAINTAIN CORE CID: PROGRESS", "Column14", "Column15", "Index"}),
+    #"Replaced Value" = Table.ReplaceValue(#"Removed Columns",null,"",Replacer.ReplaceValue,{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Categories"}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Replaced Value", {"Categories"}, "Attribute", "Value"),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Unpivoted Columns",{{"Value", type number}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type1",{{"Attribute", "Month"}}),
+    #"Added Column" = Table.AddColumn(#"Renamed Columns1", "Custom", each if [Month] = "Jan" then 1 else if [Month] = "Feb" then 2 else if [Month] = "Mar" then 3 else if [Month] = "Apr" then 4 else if [Month] = "May" then 5 else if [Month] = "Jun" then 6 else if [Month] = "Jul" then 7 else if [Month] = "Aug" then 8 else if [Month] = "Sep" then 9 else if [Month] = "Oct" then 10 else if [Month] = "Nov" then 11 else if [Month] = "Dec" then 12 else null),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Column",{{"Custom", type number}}),
+    #"Duplicated Column" = Table.DuplicateColumn(#"Changed Type2", "Value", "Value - Copy"),
+    ShiftedList = List.InsertRange(List.RemoveLastN(#"Duplicated Column"[Value], 1), 0, {null}),
+    CustomColumn = Table.FromColumns(
+        Table.ToColumns(#"Duplicated Column") & {ShiftedList},
+        Table.ColumnNames(#"Duplicated Column") & {"Value1"}
+    ),
+    #"Added Custom" = Table.AddColumn(CustomColumn, "Diff", each [Value] - [Value1]),
+    #"Inserted Merged Column" = Table.AddColumn(#"Added Custom", "Merged", each Text.Combine({[Categories], [Month]}, " "), type text),
+    #"Merged Queries" = Table.NestedJoin(#"Inserted Merged Column", {"Merged"}, #"Total - LY (2)", {"Merged"}, "Total - LY (2)", JoinKind.FullOuter),
+    #"Expanded Total - LY (2)" = Table.ExpandTableColumn(#"Merged Queries", "Total - LY (2)", {"Raw values"}, {"Total - LY (2).Raw values"}),
+    #"Added Conditional Column1" = Table.AddColumn(#"Expanded Total - LY (2)", "Revenue", each if [#"Total - LY (2).Raw values"] = null then [Value] else [#"Total - LY (2).Raw values"]),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Conditional Column1",{{"Revenue", type number}}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Changed Type3","2022 IN MTHLY CUM","2022 Revenue IN",Replacer.ReplaceText,{"Categories"}),
+    #"Replaced Value2" = Table.ReplaceValue(#"Replaced Value1","2022 OUT MTHLY CUM","2022 Revenue OUT",Replacer.ReplaceText,{"Categories"}),
+    #"Replaced Value3" = Table.ReplaceValue(#"Replaced Value2","CORE IN","2023 Revenue IN",Replacer.ReplaceText,{"Categories"}),
+    #"Replaced Value4" = Table.ReplaceValue(#"Replaced Value3","CORE OUT","2023 Revenue OUT",Replacer.ReplaceText,{"Categories"})
+in
+    #"Replaced Value4"
+
+Total - LY (2) Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    #"MAINTAIN CORE_Sheet" = Source{[Item="MAINTAIN CORE",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"MAINTAIN CORE_Sheet", [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"MAINTAIN CORE CID: PROGRESS", type text}, {"Column2", type any}, {"Column3", type any}, {"Column4", type any}, {"Column5", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"Column10", type any}, {"Column11", type any}, {"Column12", type any}, {"Column13", type any}, {"Column14", type any}, {"Column15", type any}}),
+    #"Added Index" = Table.AddIndexColumn(#"Changed Type", "Index", 0, 1, Int64.Type),
+    #"Added Conditional Column" = Table.AddColumn(#"Added Index", "Categories", each if [Index] = 13 then "LY Mth Avg Cumed OUT" else if [Index] = 11 then "CORE Cum OUT" else if [Index] = 19 then "Raw 2022 Values OUT" else if [Index] = 18 then "Raw 2022 Values IN" else [#"MAINTAIN CORE CID: PROGRESS"]),
+    #"Filtered Rows" = Table.SelectRows(#"Added Conditional Column", each ([Categories] <> null)),
+    #"Renamed Columns" = Table.RenameColumns(#"Filtered Rows",{{"Column2", "Jan"}, {"Column3", "Feb"}, {"Column4", "Mar"}, {"Column5", "Apr"}, {"Column6", "May"}, {"Column7", "Jun"}, {"Column8", "Jul"}, {"Column9", "Aug"}, {"Column10", "Sep"}, {"Column11", "Oct"}, {"Column12", "Nov"}, {"Column13", "Dec"}}),
+    #"Filtered Rows1" = Table.SelectRows(#"Renamed Columns", each ([Categories] <> "CORE Progress v LY")),
+    #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows1",{"MAINTAIN CORE CID: PROGRESS", "Column14", "Column15", "Index"}),
+    #"Replaced Value" = Table.ReplaceValue(#"Removed Columns",null,"",Replacer.ReplaceValue,{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Categories"}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Replaced Value", {"Categories"}, "Attribute", "Value"),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Unpivoted Columns",{{"Value", type number}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type1",{{"Attribute", "Month"}}),
+    #"Added Column" = Table.AddColumn(#"Renamed Columns1", "Custom", each if [Month] = "Jan" then 1 else if [Month] = "Feb" then 2 else if [Month] = "Mar" then 3 else if [Month] = "Apr" then 4 else if [Month] = "May" then 5 else if [Month] = "Jun" then 6 else if [Month] = "Jul" then 7 else if [Month] = "Aug" then 8 else if [Month] = "Sep" then 9 else if [Month] = "Oct" then 10 else if [Month] = "Nov" then 11 else if [Month] = "Dec" then 12 else null),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Column",{{"Custom", type number}}),
+    #"Duplicated Column" = Table.DuplicateColumn(#"Changed Type2", "Value", "Value - Copy"),
+    ShiftedList = List.InsertRange(List.RemoveLastN(#"Duplicated Column"[Value], 1), 0, {null}),
+    #"Replaced Value1" = List.ReplaceValue(ShiftedList,null,0,Replacer.ReplaceValue),
+    CustomColumn = Table.FromColumns(
+        Table.ToColumns(#"Duplicated Column") & {#"Replaced Value1"},
+        Table.ColumnNames(#"Duplicated Column") & {"Value1"}
+    ),
+    #"Added Custom" = Table.AddColumn(CustomColumn, "Diff", each [Value] - [Value1]),
+    #"Filtered Rows2" = Table.SelectRows(#"Added Custom", each ([Categories] = "2022 IN MTHLY CUM" or [Categories] = "2022 OUT MTHLY CUM")),
+    #"Added Conditional Column1" = Table.AddColumn(#"Filtered Rows2", "Raw values", each if [Diff] < 0 then [Value] else [Diff]),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Conditional Column1",{{"Raw values", type number}}),
+    #"Inserted Merged Column" = Table.AddColumn(#"Changed Type3", "Merged", each Text.Combine({[Categories], [Month]}, " "), type text)
+in
+    #"Inserted Merged Column"
+
+Zeal Page Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    #"ZEAL $1MM_Sheet" = Source{[Item="ZEAL $1MM",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"ZEAL $1MM_Sheet", [PromoteAllScalars=true]),
+    #"Added Index" = Table.AddIndexColumn(#"Promoted Headers", "Index", 1, 1, Int64.Type),
+    #"Added Conditional Column" = Table.AddColumn(#"Added Index", "Custom", each if [Index] = 12 then "Zeal Cum OUT" else if [Index] = 13 then "ZEAL Progress v $1MM OUT" else [#"ZEAL RETURN TO $1MM+: PROGRESS"]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Added Conditional Column",{{"ZEAL RETURN TO $1MM+: PROGRESS", type text}, {"Column2", type any}, {"Column3", type any}, {"Column4", type any}, {"Column5", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"Column10", type any}, {"Column11", type any}, {"Column12", type any}, {"Column13", type any}}),
+    #"Promoted Headers1" = Table.PromoteHeaders(#"Changed Type", [PromoteAllScalars=true]),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Promoted Headers1",{{"Column1", type text}, {"1", type any}, {"2", type any}, {"3", type any}, {"4", type any}, {"5", type any}, {"6", type any}, {"7", type any}, {"8", type any}, {"9", type any}, {"10", type any}, {"11", type any}, {"12", type any}}),
+    #"Promoted Headers2" = Table.PromoteHeaders(#"Changed Type1", [PromoteAllScalars=true]),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Promoted Headers2",{{"2022 IN MTHLY CUM", type text}, {"332890", type any}, {"594026", type any}, {"916826", type any}, {"1299887", type any}, {"1726199", type any}, {"2021122", type any}, {"2394904", type any}, {"2854145", type any}, {"3148192", type any}, {"3546613", type any}, {"4052982", type any}, {"4415096", type any}}),
+    #"Promoted Headers3" = Table.PromoteHeaders(#"Changed Type2", [PromoteAllScalars=true]),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Promoted Headers3",{{"2022 OUT MTHLY CUM", type text}, {"406362", type any}, {"571983", type any}, {"1059995", type any}, {"1403637", type any}, {"1683039", type any}, {"2076052", type any}, {"2363890", type any}, {"2701129", type any}, {"3062618", type any}, {"3515365", type any}, {"3966666", type any}, {"4302374", type any}}),
+    #"Promoted Headers4" = Table.PromoteHeaders(#"Changed Type3", [PromoteAllScalars=true]),
+    #"Changed Type4" = Table.TransformColumnTypes(#"Promoted Headers4",{{"Column1", type text}, {"Column2", type any}, {"Column3", type any}, {"Column4", type any}, {"Column5", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"Column10", type any}, {"Column11", type any}, {"Column12", type any}, {"Column13", type any}}),
+    #"Promoted Headers5" = Table.PromoteHeaders(#"Changed Type4", [PromoteAllScalars=true]),
+    #"Changed Type5" = Table.TransformColumnTypes(#"Promoted Headers5",{{"Column1", type text}, {"Jan", type number}, {"Feb", type number}, {"Mar", type number}, {"Apr", type number}, {"May", type number}, {"Jun", type number}, {"Jul", type number}, {"Aug", type number}, {"Sep", Int64.Type}, {"Oct", type number}, {"Nov", type number}, {"Dec", Int64.Type}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type5",{{"Column1", "Old Column"}, {"Column15", "Column1"}}),
+    #"Filtered Rows" = Table.SelectRows(#"Renamed Columns1", each ([Column1] <> null)),
+    #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows",{"Old Column", "5"}),
+    #"Demoted Headers" = Table.DemoteHeaders(#"Removed Columns"),
+    #"Transposed Table" = Table.Transpose(#"Demoted Headers"),
+    #"Added Custom" = Table.AddColumn(#"Transposed Table", "Custom", each 83333.333333),
+    #"Transposed Table1" = Table.Transpose(#"Added Custom"),
+    #"Promoted Headers6" = Table.PromoteHeaders(#"Transposed Table1", [PromoteAllScalars=true]),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Promoted Headers6", {"Column1"}, "Attribute", "Value"),
+    #"Removed Duplicates" = Table.Distinct(#"Unpivoted Columns"),
+    #"Renamed Columns" = Table.RenameColumns(#"Removed Duplicates",{{"Attribute", "Month"}}),
+    #"Added Column" = Table.AddColumn(#"Renamed Columns", "Custom", each if [Month] = "Jan" then 1 else if [Month] = "Feb" then 2 else if [Month] = "Mar" then 3 else if [Month] = "Apr" then 4 else if [Month] = "May" then 5 else if [Month] = "Jun" then 6 else if [Month] = "Jul" then 7 else if [Month] = "Aug" then 8 else if [Month] = "Sep" then 9 else if [Month] = "Oct" then 10 else if [Month] = "Nov" then 11 else if [Month] = "Dec" then 12 else null),
+    #"Changed Type6" = Table.TransformColumnTypes(#"Added Column",{{"Custom", type number}, {"Value", type number}, {"Column1", type text}}),
+    #"Replaced Value" = Table.ReplaceValue(#"Changed Type6","83333.333333","Monthly Zeal Goal",Replacer.ReplaceValue,{"Column1"}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","Zeal Cum OUT","Zeal Cumulative OUT",Replacer.ReplaceText,{"Column1"}),
+    #"Replaced Value2" = Table.ReplaceValue(#"Replaced Value1","ZEAL Cum","Zeal Cumulative IN",Replacer.ReplaceText,{"Column1"}),
+    #"Replaced Value3" = Table.ReplaceValue(#"Replaced Value2","$1MM Mth Avg Cumed","Cumulative Zeal Goal",Replacer.ReplaceText,{"Column1"}),
+    #"Replaced Value4" = Table.ReplaceValue(#"Replaced Value3","ZEAL Progress v $1MM","ZEAL Progress v $1MM IN",Replacer.ReplaceValue,{"Column1"}),
+    #"Replaced Value5" = Table.ReplaceValue(#"Replaced Value4","ZEAL IN","Zeal Revenue IN",Replacer.ReplaceText,{"Column1"}),
+    #"Replaced Value6" = Table.ReplaceValue(#"Replaced Value5","ZEAL OUT","Zeal Revenue OUT",Replacer.ReplaceText,{"Column1"})
+in
+    #"Replaced Value6"
+
+Zeal Progress Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    #"ZEAL $1MM_Sheet" = Source{[Item="ZEAL $1MM",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(#"ZEAL $1MM_Sheet", [PromoteAllScalars=true]),
+    #"Added Index" = Table.AddIndexColumn(#"Promoted Headers", "Index", 1, 1, Int64.Type),
+    #"Added Conditional Column" = Table.AddColumn(#"Added Index", "Custom", each if [Index] = 12 then "Zeal Cum OUT" else if [Index] = 13 then "ZEAL Progress v $1MM OUT" else [#"ZEAL RETURN TO $1MM+: PROGRESS"]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Added Conditional Column",{{"ZEAL RETURN TO $1MM+: PROGRESS", type text}, {"Column2", type any}, {"Column3", type any}, {"Column4", type any}, {"Column5", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"Column10", type any}, {"Column11", type any}, {"Column12", type any}, {"Column13", type any}}),
+    #"Promoted Headers1" = Table.PromoteHeaders(#"Changed Type", [PromoteAllScalars=true]),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Promoted Headers1",{{"Column1", type text}, {"1", type any}, {"2", type any}, {"3", type any}, {"4", type any}, {"5", type any}, {"6", type any}, {"7", type any}, {"8", type any}, {"9", type any}, {"10", type any}, {"11", type any}, {"12", type any}}),
+    #"Promoted Headers2" = Table.PromoteHeaders(#"Changed Type1", [PromoteAllScalars=true]),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Promoted Headers2",{{"2022 IN MTHLY CUM", type text}, {"332890", type any}, {"594026", type any}, {"916826", type any}, {"1299887", type any}, {"1726199", type any}, {"2021122", type any}, {"2394904", type any}, {"2854145", type any}, {"3148192", type any}, {"3546613", type any}, {"4052982", type any}, {"4415096", type any}}),
+    #"Promoted Headers3" = Table.PromoteHeaders(#"Changed Type2", [PromoteAllScalars=true]),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Promoted Headers3",{{"2022 OUT MTHLY CUM", type text}, {"406362", type any}, {"571983", type any}, {"1059995", type any}, {"1403637", type any}, {"1683039", type any}, {"2076052", type any}, {"2363890", type any}, {"2701129", type any}, {"3062618", type any}, {"3515365", type any}, {"3966666", type any}, {"4302374", type any}}),
+    #"Promoted Headers4" = Table.PromoteHeaders(#"Changed Type3", [PromoteAllScalars=true]),
+    #"Changed Type4" = Table.TransformColumnTypes(#"Promoted Headers4",{{"Column1", type text}, {"Column2", type any}, {"Column3", type any}, {"Column4", type any}, {"Column5", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"Column10", type any}, {"Column11", type any}, {"Column12", type any}, {"Column13", type any}}),
+    #"Promoted Headers5" = Table.PromoteHeaders(#"Changed Type4", [PromoteAllScalars=true]),
+    #"Changed Type5" = Table.TransformColumnTypes(#"Promoted Headers5",{{"Column1", type text}, {"Jan", type number}, {"Feb", type number}, {"Mar", type number}, {"Apr", type number}, {"May", type number}, {"Jun", type number}, {"Jul", type number}, {"Aug", type number}, {"Sep", Int64.Type}, {"Oct", type number}, {"Nov", type number}, {"Dec", Int64.Type}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type5",{{"Column1", "Old Column"}, {"Column15", "Column1"}}),
+    #"Filtered Rows" = Table.SelectRows(#"Renamed Columns1", each ([Column1] <> null)),
+    #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows",{"Old Column", "5"}),
+    #"Demoted Headers" = Table.DemoteHeaders(#"Removed Columns"),
+    #"Transposed Table" = Table.Transpose(#"Demoted Headers"),
+    #"Added Custom" = Table.AddColumn(#"Transposed Table", "Custom", each 83333.333333),
+    #"Transposed Table1" = Table.Transpose(#"Added Custom"),
+    #"Promoted Headers6" = Table.PromoteHeaders(#"Transposed Table1", [PromoteAllScalars=true]),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Promoted Headers6", {"Column1"}, "Attribute", "Value"),
+    #"Removed Duplicates" = Table.Distinct(#"Unpivoted Columns"),
+    #"Renamed Columns" = Table.RenameColumns(#"Removed Duplicates",{{"Attribute", "Month"}}),
+    #"Added Column" = Table.AddColumn(#"Renamed Columns", "Custom", each if [Month] = "Jan" then 1 else if [Month] = "Feb" then 2 else if [Month] = "Mar" then 3 else if [Month] = "Apr" then 4 else if [Month] = "May" then 5 else if [Month] = "Jun" then 6 else if [Month] = "Jul" then 7 else if [Month] = "Aug" then 8 else if [Month] = "Sep" then 9 else if [Month] = "Oct" then 10 else if [Month] = "Nov" then 11 else if [Month] = "Dec" then 12 else null),
+    #"Changed Type6" = Table.TransformColumnTypes(#"Added Column",{{"Custom", type number}, {"Value", type number}, {"Column1", type text}}),
+    #"Replaced Value" = Table.ReplaceValue(#"Changed Type6","83333.333333","Monthly Zeal Goal",Replacer.ReplaceValue,{"Column1"}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","Zeal Cum OUT","Zeal Cumulative OUT",Replacer.ReplaceText,{"Column1"}),
+    #"Replaced Value2" = Table.ReplaceValue(#"Replaced Value1","ZEAL Cum","Zeal Cumulative IN",Replacer.ReplaceText,{"Column1"}),
+    #"Replaced Value3" = Table.ReplaceValue(#"Replaced Value2","$1MM Mth Avg Cumed","Cumulative Zeal Goal",Replacer.ReplaceText,{"Column1"}),
+    #"Replaced Value4" = Table.ReplaceValue(#"Replaced Value3","ZEAL Progress v $1MM","ZEAL Progress v $1MM IN",Replacer.ReplaceValue,{"Column1"})
+in
+    #"Replaced Value4"
+
+Instruments - Goals Query:
+
+let
+    Source = Excel.Workbook(File.Contents("C:\Users\Thomas\Downloads\Summer-2023-Product-Analyst-Intern-Projects-main\Power BI\Sales Progress Dashboard\CID SALES PROGRESS REPORT.xlsx"), null, true),
+    SUM_Sheet = Source{[Item="SUM",Kind="Sheet"]}[Data],
+    #"Promoted Headers" = Table.PromoteHeaders(SUM_Sheet, [PromoteAllScalars=true]),
+    #"Promoted Headers1" = Table.PromoteHeaders(#"Promoted Headers", [PromoteAllScalars=true]),
+    #"Filtered Rows1" = Table.SelectRows(#"Promoted Headers1", each ([Column1] <> null and [Column1] <> "CI-610" and [Column1] <> "F-751 Mel" and [Column1] <> "INSTRUMENTS - Cum v 6yr Avg" and [Column1] <> "New Item" and [Column1] <> "TTL CID CORP IN" and [Column1] <> "TTL CID CORP IN Cum v LY" and [Column1] <> "TTL CID CORP OUT" and [Column1] <> "TTL CID CORP OUT Cum v LY" and [Column1] <> "TTL ROOT")),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Filtered Rows1",{{"Column2", type number}, {"TTL 2023", type number}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type1",{{"TTL 2023", "2023 Total"}, {"Column2", "Cumulative Six Year Average"}, {"Column1", "Instruments"}}),
+    #"Removed Other Columns" = Table.SelectColumns(#"Renamed Columns",{"Instruments", "Cumulative Six Year Average", "2023 Total"}),
+    #"Added Custom" = Table.AddColumn(#"Removed Other Columns", "Remaining Instruments", each [Cumulative Six Year Average] - [2023 Total]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Added Custom",{{"Remaining Instruments", type number}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"Instruments", "Instrument"}, {"Remaining Instruments", "Remaining"}})
+in
+    #"Renamed Columns1"
